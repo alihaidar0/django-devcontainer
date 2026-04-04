@@ -1,0 +1,25 @@
+# ============================================================
+#  .dockerignore
+#  Only docker/ and scripts/ are needed for the image build.
+# ============================================================
+
+# Git
+.git
+.gitignore
+.gitattributes
+.github
+
+# Docs
+*.md
+!README.md
+docs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~

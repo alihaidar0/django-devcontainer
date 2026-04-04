@@ -1,0 +1,135 @@
+# ============================================================
+#  Django Dev Image — Python 3.14.3
+#
+#  PHILOSOPHY: Blank canvas.
+#  Provides the full developer environment — Python, uv, tools,
+#  shell. Installs NO Django project packages globally.
+#  Project dependencies are installed per project with uv.
+#
+#  Pre-installed:
+#    ✓ Python 3.14.3 (slim-bookworm)
+#    ✓ uv
+#    ✓ Git + GitHub CLI (gh)
+#    ✓ openssh-client
+#    ✓ PostgreSQL 18 client + pgcli
+#    ✓ redis-cli
+#    ✓ All system build libraries (libpq, libssl, libjpeg...)
+#    ✓ ruff · mypy · pre-commit
+#    ✓ ipython (rich interactive shell)
+#    ✓ httpie (API testing from terminal)
+#    ✓ celery CLI (worker + beat start without waiting for uv sync)
+#    ✓ flower (Celery monitoring UI on :5555)
+#    ✓ watchfiles (auto-reload Celery worker on code change)
+#    ✓ Starship prompt + Django aliases
+#
+#  NOT pre-installed (install per project with uv):
+#    ✗ Django, DRF, psycopg, redis-py — any project-specific package
+#    ✗ Celery app config (celery -A config ...) — project wires this
+# ============================================================
+
+# Single source of truth for the Python version.
+# To upgrade: change this ARG — the workflow does not need updating.
+ARG PYTHON_VERSION=3.14.3
+FROM python:${PYTHON_VERSION}-slim-bookworm AS base
+
+LABEL org.opencontainers.image.title="Django Dev Container"
+LABEL org.opencontainers.image.description="Blank-canvas Django development environment — Python 3.14.3, uv, GitHub CLI"
+LABEL org.opencontainers.image.authors="Ali Haidar"
+LABEL org.opencontainers.image.source="https://github.com/alihaidar0/django-devcontainer"
+
+# ── Runtime environment ──────────────────────────────────────
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONFAULTHANDLER=1 \
+    PYTHONUTF8=1 \
+    UV_SYSTEM_PYTHON=1 \
+    UV_CACHE_DIR=/root/.cache/uv \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PATH="/root/.local/bin:/usr/local/bin:$PATH"
+
+# ── System packages ──────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # C compiler — needed by some Python packages that build native extensions
+    build-essential gcc g++ make \
+    # PostgreSQL client + dev headers
+    libpq-dev postgresql-client \
+    # SSL / crypto
+    libssl-dev libffi-dev \
+    # Compression
+    zlib1g-dev libbz2-dev \
+    # Image processing (Pillow)
+    libjpeg-dev libpng-dev libwebp-dev libfreetype6-dev \
+    # XML
+    libxml2-dev libxslt1-dev \
+    # Redis CLI — test cache/broker from the terminal
+    redis-tools \
+    # SSH — required for git push via SSH inside the container
+    openssh-client \
+    # Shell + utilities
+    git git-lfs curl wget unzip jq vim nano htop tree \
+    # Network diagnostics
+    iputils-ping dnsutils netcat-openbsd \
+    # Process tools
+    procps \
+    # Security
+    ca-certificates gnupg \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── uv ───────────────────────────────────────────────────────
+# Installs to /root/.local/bin — already on PATH via ENV above.
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# ── GitHub CLI ───────────────────────────────────────────────
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+    | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Global developer tools ───────────────────────────────────
+# These are environment tools, not project dependencies.
+# They work across every Django project regardless of its own packages.
+#
+# WHY celery/flower/watchfiles are global:
+#   The celery and celery-beat containers start from this same image.
+#   If celery were only in the project venv, the worker container would
+#   fail to start before `uv sync` runs. Baking it here means the
+#   worker is always ready regardless of project state.
+RUN uv pip install --system \
+    # Code quality
+    ruff \
+    mypy \
+    pre-commit \
+    # Rich interactive Python shell
+    ipython \
+    # Better PostgreSQL terminal client (replaces plain psql)
+    pgcli \
+    # API testing from the terminal
+    httpie \
+    # Celery CLI — required by worker + beat containers at startup
+    celery \
+    # Celery monitoring UI — accessible at :5555
+    flower \
+    # Auto-reload Celery worker on code change during development
+    watchfiles
+
+# ── Shell customization ──────────────────────────────────────
+# shell_setup.sh uses bash-specific options (set -o pipefail, heredocs).
+# The script declares #!/bin/bash so it runs under bash regardless of
+# the default /bin/sh (dash on Debian/Ubuntu), which does not support pipefail.
+COPY scripts/shell_setup.sh /tmp/shell_setup.sh
+RUN chmod +x /tmp/shell_setup.sh && /tmp/shell_setup.sh
+
+WORKDIR /workspace
+
+# 8000 — Django dev server
+# 5555 — Flower (Celery monitoring UI)
+EXPOSE 8000 5555
+
+CMD ["sleep", "infinity"]

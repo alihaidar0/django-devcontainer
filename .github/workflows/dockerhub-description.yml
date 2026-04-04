@@ -1,0 +1,72 @@
+# ============================================================
+#  .github/workflows/dockerhub-description.yml
+#
+#  Syncs README.md to the Docker Hub repository description.
+#
+#  Triggers:
+#    - Push to main where README.md changed      → updates Docker Hub if image exists
+#    - PR targeting main where README.md changed → updates Docker Hub if image exists
+#    - Manual dispatch                           → updates Docker Hub if image exists
+#
+#  Behaviour:
+#    - Checks if the image exists on Docker Hub before updating
+#    - Skips silently (no error) if the image does not exist yet
+#
+#  Required GitHub Secrets:
+#    DOCKERHUB_USERNAME   Docker Hub username
+#    DOCKERHUB_TOKEN      Docker Hub access token (Read/Write)
+# ============================================================
+
+name: Docker Hub description
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "README.md"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "README.md"
+  workflow_dispatch:
+jobs:
+  update-description:
+    name: Update Docker Hub description
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: README.md
+      - name: Check image exists on Docker Hub
+        id: check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://hub.docker.com/v2/repositories/${{ secrets.DOCKERHUB_USERNAME }}/django-devcontainer/)
+          if [ "$STATUS" = "200" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+      - name: Update Docker Hub description
+        if: steps.check.outputs.exists == 'true'
+        uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/django-devcontainer
+          readme-filepath: ./README.md
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## 📄 Docker Hub Description Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered by** | \`${{ github.event_name }}\` on \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image exists** | \`${{ steps.check.outputs.exists }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Docker Hub updated** | \`${{ steps.check.outputs.exists }}\` |" >> $GITHUB_STEP_SUMMARY
