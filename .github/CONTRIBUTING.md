@@ -54,14 +54,16 @@ at the same time.
 | Target branches | `main` (Include default branch) |
 | Enforcement status | **Active** |
 | Bypass list | *empty* |
+| **Restrict creations** | ✅ |
+| **Restrict updates** | ❌ — with an empty bypass list it blocks **every** update to `main`, PR merges included |
 | **Restrict deletions** | ✅ |
 | **Block force pushes** | ✅ |
 | **Require a pull request before merging** | ✅ |
 | &nbsp;&nbsp;Required approvals | **0** while solo (raise to 1 with a second maintainer) |
-| &nbsp;&nbsp;Require review from Code Owners | ✅ (uses [`CODEOWNERS`](CODEOWNERS)) |
+| &nbsp;&nbsp;Require review from Code Owners | ❌ while solo — the author can't approve their own PR, so it would block every merge; enable (with 1 approval) once there is a second maintainer ([`CODEOWNERS`](CODEOWNERS) is ready) |
 | &nbsp;&nbsp;Require conversation resolution | ✅ |
 | &nbsp;&nbsp;Allowed merge methods | **Merge** only — squash/rebase would give `main` new commits that `develop` doesn't have |
-| **Require status checks to pass** | ✅ → **`PR source`**, **`Lint`**, **`Image tests`** |
+| **Require status checks to pass** | ✅ → **`PR source`**, **`Lint`**, **`Image tests`** — set each check's source to **GitHub Actions** (not "Any source"), so no other integration can post a passing status with the same name |
 | &nbsp;&nbsp;Require branches to be up to date | ❌ — `main` only ever receives `develop`, so this would just force a pointless re-sync after every release |
 
 > **"Only `develop` may open PRs into `main`"** can't be expressed as a
@@ -84,13 +86,17 @@ at the same time.
 | **Block force pushes** | ✅ |
 | **Require a pull request before merging** | ❌ — direct pushes are allowed |
 
-**Settings → General:** default branch **`main`**; *Automatically delete head
+**Settings → General:** default branch **`main`**; *Template repository* ❌ (only
+`django-template` is a template); under *Pull Requests*: *Allow merge commits* ✅
+(the only method `protect-main` accepts) and *Automatically delete head
 branches* ✅ (cleans up Dependabot branches — `develop` is protected by the
 ruleset above).
 
-**Settings → Code security:** enable *Dependabot alerts*, *Private
-vulnerability reporting*, and *Code scanning* (Trivy SARIF). Leave **Dependabot
-security updates OFF**: GitHub always opens those PRs against the default
+**Settings → Advanced Security:** enable *Private vulnerability reporting*,
+*Dependency graph*, *Dependabot alerts*, *Dependabot malware alerts*, *Secret
+Protection* + *Push protection*, and *CodeQL analysis → Default setup* (it
+scans the GitHub Actions workflows; Trivy SARIF lands in the same Code scanning
+tab). Leave **Dependabot security updates OFF**: GitHub always opens those PRs against the default
 branch (`main`), which only accepts PRs from `develop`. The weekly version
 updates in §4 carry fixed versions through `develop` instead.
 
