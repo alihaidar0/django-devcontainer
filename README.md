@@ -94,7 +94,7 @@ What a project using this image can rely on:
 | **User** | `dev` — UID/GID `1000`, passwordless `sudo`. Declared in the image's `devcontainer.metadata` label, so `devcontainer.json` needs no `remoteUser`. |
 | **Workspace** | `/workspace` (owned by `dev`) — mount your project here |
 | **Home** | `/home/dev` — `.ssh` (0700), `.cache/uv`, `.shell_history` pre-created and owned by `dev`, so named volumes mounted there inherit the right ownership |
-| **PATH** | `/workspace/.venv/bin` comes **first**. After `uv sync`, `python`, `celery`, `mypy`, `pytest` … resolve to the project's versions in every container — no activation step. Before that, the image's global tools answer. |
+| **PATH** | `/workspace/.venv/bin` comes **first** — in every container and every shell, login shells included (`/etc/profile` would otherwise reset it; VS Code probes the environment with one). After `uv sync`, `python`, `celery`, `mypy`, `pytest` … resolve to the project's versions — no activation step. Before that, the image's global tools answer. |
 | **Env** | `UV_LINK_MODE=copy` (cache and bind-mounted `.venv` live on different filesystems), `PYTHONPATH=/workspace` in interactive shells, `PYTHONUNBUFFERED=1`, UTF-8 locale |
 | **Ports** | `8000` Django dev server · `5555` Flower |
 | **Command** | `sleep infinity` — the container stays up for VS Code to attach |
