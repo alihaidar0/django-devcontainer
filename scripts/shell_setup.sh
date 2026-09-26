@@ -108,6 +108,18 @@ alias cls="clear"
 eval "$(starship init bash)"
 BASHRC
 
+# ── Login shells ─────────────────────────────────────────────
+# Debian's /etc/profile resets PATH for login shells — and VS Code probes the
+# container environment with one. Put the project venv (and ~/.local/bin) back
+# in front, matching the image's ENV PATH.
+cat > /etc/profile.d/10-devcontainer-path.sh << 'PROFILE'
+case ":${PATH}:" in
+    *":/workspace/.venv/bin:"*) ;;
+    *) PATH="/workspace/.venv/bin:${HOME}/.local/bin:${PATH}" ;;
+esac
+export PATH
+PROFILE
+
 for rc in /etc/skel/.bashrc /root/.bashrc; do
     printf '\n# django-devcontainer shell config\n[ -f /etc/bash.devcontainer ] && . /etc/bash.devcontainer\n' >> "$rc"
 done

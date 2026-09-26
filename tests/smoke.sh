@@ -91,6 +91,10 @@ expect "PYTHONPATH=/workspace, no trailing colon" test "$(ishell 'echo $PYTHONPA
 
 echo "── Project venv precedence ──────────────────────"
 expect "/workspace/.venv/bin first on PATH" test "${PATH%%:*}" = /workspace/.venv/bin
+# Login shells (VS Code's environment probe) re-run /etc/profile, which resets PATH.
+# shellcheck disable=SC2016  # ${PATH} must expand inside the login shell
+expect "/workspace/.venv/bin first in login shells too" \
+    test "$(bash -lc 'echo "${PATH%%:*}"' 2>/dev/null)" = /workspace/.venv/bin
 project=$(mktemp -d)
 trap 'rm -rf "$project"' EXIT
 uv venv --quiet "$project/.venv"
