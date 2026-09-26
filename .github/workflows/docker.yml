@@ -3,35 +3,39 @@
 #
 #  Tests, publishes, and scans the dev image on Docker Hub.
 #
-#  Principle: test on the PR, publish on merge — each thing runs once.
+#  Branch model: develop (direct pushes + Dependabot PRs) ─PR─▶ main.
+#  Principle: every commit is tested once; merging to main only publishes.
 #
 #  Jobs:
-#    changes      On PRs, lists the changed files: do the image inputs
-#                 (docker/, scripts/, tests/, .dockerignore, this file) change?
+#    changes      Did the image inputs (docker/, scripts/, tests/,
+#                 .dockerignore, this file) change?
+#                   PR into develop → the PR's files
+#                   push to develop → develop vs main (what the next release adds)
+#                   push to main    → this push vs the previous main
 #    test         Native build per architecture (amd64 on ubuntu-26.04,
 #                 arm64 on ubuntu-26.04-arm — no QEMU) + tests/smoke.sh.
 #                 Nothing is pushed.
-#    image-tests  "Image tests" — the single REQUIRED status check. Always
-#                 reports on PRs: passes when test passed or was skipped
-#                 (no image change), fails otherwise.
+#    image-tests  "Image tests" — REQUIRED on main. Reports on every develop
+#                 push and PR: passes when test passed or was skipped (no
+#                 image change), fails otherwise. Status checks attach to the
+#                 commit, so the develop → main PR reuses develop's result.
 #    publish      Docker's official reusable builder (docker/github-builder):
 #                 native per-arch builds, multi-arch manifest, SBOM, and a
 #                 Sigstore-signed SLSA provenance attestation. Pushes
-#                 :latest, :sha-<short>, :YYYYMMDD. Never on PRs.
+#                 :latest, :sha-<short>, :YYYYMMDD. Only from main.
 #    scan         Trivy scan of the pushed digest → Security tab (informational).
 #
 #  Triggers:
-#    - PR into main (any change)   → changes → test (only if image inputs
-#                                    changed) → Image tests
-#    - Merge to main (image paths) → publish → scan
-#      No re-test: the PR already tested the exact merged tree, and the
-#      main ruleset requires "Image tests" to pass before merging.
-#    - Weekly schedule (Mon 05:00) → test → publish → scan
-#      Nothing was tested for this build yet, so it is tested first.
+#    - Push to develop / PR into develop → changes → test (if image changed)
+#                                          → Image tests
+#    - Merge develop → main              → changes → publish → scan
+#      (only when image inputs changed; no re-test — develop's head commit
+#      already carries a green "Image tests", required by the main ruleset)
+#    - Weekly schedule (Mon 05:00, main) → test → publish → scan
 #      Picks up Debian security fixes, apt packages and Starship even when
 #      nothing in the repo changed. (GitHub pauses schedules after 60
 #      days without repository activity — re-enable in the Actions tab.)
-#    - Manual dispatch             → test → publish (toggle) → scan
+#    - Manual dispatch on main           → test → publish (toggle) → scan
 #
 #  Required GitHub Secrets:
 #    DOCKERHUB_USERNAME   Docker Hub username
@@ -44,19 +48,13 @@
 
 name: Docker
 
+# No path filters: "Image tests" must report on every develop commit so the
+# develop → main PR can require it; the `changes` job decides what to build.
 on:
   push:
-    branches: [main]
-    paths:
-      - "docker/**"
-      - "scripts/**"
-      - "tests/**"
-      - ".dockerignore"
-      - ".github/workflows/docker.yml"
-  # No path filter on PRs, so "Image tests" can be a required check;
-  # the `changes` job decides whether the image is actually rebuilt.
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [develop]
   schedule:
     - cron: "0 5 * * 1"
   workflow_dispatch:
@@ -75,7 +73,8 @@ permissions:
 
 concurrency:
   group: docker-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # A newer develop commit or PR update supersedes the older run; main never cancels.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' }}
 
 env:
   IMAGE_NAME: docker.io/alihaidar199527/django-devcontainer
@@ -88,7 +87,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read   # list the PR's changed files
+      pull-requests: read   # list a PR's changed files
     outputs:
       image: ${{ steps.diff.outputs.image }}
     steps:
@@ -97,15 +96,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          BEFORE: ${{ github.event.before }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          # Push is already path-filtered; schedule/dispatch always build.
-          if [ "$EVENT" != "pull_request" ]; then
-            echo "image=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          files=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+          build() { echo "image=$1" >> "$GITHUB_OUTPUT"; echo "image=$1 ($2)"; exit 0; }
+          case "$EVENT" in
+            pull_request)
+              files=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename') ;;
+            push)
+              # develop: everything the next release would add to main.
+              # main:    what this merge changed.
+              if [ "$REF" = "refs/heads/main" ]; then base="$BEFORE"; else base="main"; fi
+              if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+                build true "new branch, no base to compare"
+              fi
+              files=$(gh api "repos/${REPO}/compare/${base}...${SHA}" --jq '.files[].filename')
+              # The compare API lists at most 300 files: assume the image changed beyond that.
+              if [ "$(grep -c . <<<"$files")" -ge 300 ]; then build true "300+ files changed"; fi ;;
+            *)
+              build true "${EVENT} always builds" ;;
+          esac
           echo "Changed files:"
           echo "$files"
           if grep -qE '^(docker/|scripts/|tests/|\.dockerignore$|\.github/workflows/docker\.yml$)' <<<"$files"; then
@@ -117,8 +130,10 @@ jobs:
   test:
     name: Test (${{ matrix.arch }})
     needs: changes
-    # Not on push: the merged tree was already tested on its PR.
-    if: github.event_name != 'push' && needs.changes.outputs.image == 'true'
+    # Not on push to main: develop's head commit was already tested.
+    if: >-
+      needs.changes.outputs.image == 'true' &&
+      !(github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -154,12 +169,15 @@ jobs:
       - name: Smoke test
         run: docker run --rm -v "$PWD/tests:/tests:ro" django-devcontainer:test bash /tests/smoke.sh
 
-  # The single required status check. A matrix job skipped by `if` reports
-  # an unexpanded name, so the per-arch checks can't be required directly.
+  # The required status check. A matrix job skipped by `if` reports an
+  # unexpanded name, so the per-arch checks can't be required directly.
   image-tests:
     name: Image tests
     needs: [changes, test]
-    if: always() && github.event_name == 'pull_request'
+    if: >-
+      always() &&
+      (github.event_name == 'pull_request' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/develop'))
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
@@ -180,12 +198,14 @@ jobs:
   publish:
     name: Publish
     needs: [changes, test]
-    # push: tested on the PR (test is skipped); schedule/dispatch: test must pass.
+    # Only from main. Push: tested on develop (test skipped), and only when the
+    # image inputs changed. Schedule/dispatch: test must pass first.
     if: >-
       !cancelled() &&
+      github.ref == 'refs/heads/main' &&
       needs.changes.result == 'success' &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
-      (github.event_name == 'push' ||
+      ((github.event_name == 'push' && needs.changes.outputs.image == 'true') ||
        github.event_name == 'schedule' ||
        (github.event_name == 'workflow_dispatch' && inputs.push))
     uses: docker/github-builder/.github/workflows/build.yml@58cb9f5b71b1836d6f690c1e95effdeb9b98cb8a # v1.17.0

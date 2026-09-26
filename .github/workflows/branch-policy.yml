@@ -1,0 +1,47 @@
+# ============================================================
+#  .github/workflows/branch-policy.yml
+#
+#  Enforces the branch model:  develop ─PR─▶ main.
+#
+#  GitHub rulesets can require a pull request into main, but cannot
+#  restrict which branch it comes from. This check does: it fails any
+#  PR into main whose head is not this repository's `develop` branch
+#  (a fork's branch named `develop` fails too). Listed as a REQUIRED
+#  status check ("PR source") in the main ruleset, that makes the rule
+#  binding.
+# ============================================================
+
+name: Branch policy
+
+on:
+  pull_request:
+    branches: [main]
+    # `edited` re-runs the check when a PR's base branch is changed.
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-source:
+    name: PR source
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Only develop may open PRs into main
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REPO" != "$REPO" ] || [ "$HEAD_REF" != "develop" ]; then
+            echo "❌ PRs into main are only accepted from ${REPO}:develop (got ${HEAD_REPO}:${HEAD_REF})."
+            echo "   Merge the change into develop first, then open develop → main."
+            exit 1
+          fi
+          echo "✅ PR source verified: develop → main"
+          echo "✅ PR source verified: \`develop\` → \`main\`" >> "$GITHUB_STEP_SUMMARY"

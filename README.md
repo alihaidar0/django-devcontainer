@@ -173,11 +173,13 @@ Shell history (50 000 lines) persists when a volume is mounted at `/home/dev/.sh
 ## How it is built
 
 ```text
-PR into main ─────▶ Lint (hadolint · ShellCheck · actionlint · cspell · markdownlint)
-                └─▶ Image tests: if the image inputs changed, native build on
-                    amd64 + arm64 runners → tests/smoke.sh (both checks required)
+Push to develop ──▶ Lint (hadolint · ShellCheck · actionlint · cspell · markdownlint)
+Dependabot PR ────└─▶ Image tests: if the image inputs changed, native build on
+                      amd64 + arm64 runners → tests/smoke.sh
 
-Merge to main ────────────▶ Publish ─▶ Scan      (already tested on the PR)
+PR develop → main ─▶ PR source + the Lint / Image tests results of develop's
+                     head commit (required — nothing re-runs)
+Merge to main ────────────▶ Publish ─▶ Scan      (already tested on develop)
 Weekly (Mon 05:00) ▶ Test ─▶ Publish ─▶ Scan
 Manual dispatch ──▶ Test ─▶ Publish ─▶ Scan
                             │           └─ Trivy → Security tab
@@ -189,8 +191,10 @@ Manual dispatch ──▶ Test ─▶ Publish ─▶ Scan
 - **No emulation:** arm64 is built on GitHub's native arm64 runners, not QEMU.
 - **Tested before pushed, and only once:** `tests/smoke.sh` checks the user,
   every tool, the shell config, and `.venv` precedence on both architectures —
-  on the PR (a required check), or right before a scheduled/manual publish.
-  Nothing runs twice for the same change.
+  on every `develop` commit (required to release), or right before a
+  scheduled/manual publish. Nothing runs twice for the same commit.
+- **Branch model:** work lands on `develop`; `main` accepts PRs from `develop`
+  only, and every merge into `main` is a release.
 - **Pinned supply chain:** every action and the base/uv images are pinned by
   commit SHA, digest, or exact version; Dependabot checks **everything** —
   actions, the Python and uv images, and every CLI tool — weekly, after a
@@ -208,6 +212,7 @@ django-devcontainer/
 │   ├── ISSUE_TEMPLATE/              # Bug + feature forms (blank issues disabled)
 │   ├── workflows/
 │   │   ├── docker.yml               # Test → publish → scan the image
+│   │   ├── branch-policy.yml        # PR source: only develop may open PRs into main
 │   │   ├── lint.yml                 # hadolint · ShellCheck · actionlint · cspell · markdownlint
 │   │   ├── dockerhub-description.yml# README.md → Docker Hub
 │   │   └── labels.yml               # labels.yml → GitHub labels
@@ -239,11 +244,13 @@ django-devcontainer/
 
 ## Updating the image
 
-Open a PR into `main`; the `Test` jobs build and smoke-test both architectures.
-Merge when green — the image publishes automatically.
+Push to `develop`; the `Test` jobs build and smoke-test both architectures.
+When green, open a PR `develop` → `main` and merge it — the image publishes
+automatically.
 
-**Updates arrive as Dependabot PRs** every Monday: GitHub Actions, the Python
-and uv images, and the pinned CLI tools. Review, let CI go green, merge.
+**Updates arrive as Dependabot PRs into `develop`** every Monday: GitHub
+Actions, the Python and uv images, and the pinned CLI tools. Review, let CI go
+green, merge — they reach `main` with the next `develop` → `main` release.
 
 **Python minor upgrade** (e.g. 3.14 → 3.15) also arrives as its own Dependabot
 PR, but its `Test` jobs fail on purpose until you update the Python version

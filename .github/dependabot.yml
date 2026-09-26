@@ -13,9 +13,16 @@
 # client, …) and the Starship binary. The weekly scheduled rebuild in
 # workflows/docker.yml picks up their latest releases instead.
 #
+# Branch model: every PR targets `develop` (target-branch below); releases
+# reach `main` through the develop → main PR. GitHub always opens *security*
+# update PRs against the default branch (target-branch doesn't apply to them),
+# and main only accepts PRs from develop — so the "Dependabot security updates"
+# repository setting stays OFF. Alerts stay on, and these weekly version updates
+# carry the fixed versions through develop.
+#
 # Cooldown: a version update is proposed only once the release is 7 days old,
 # so a compromised or broken release is usually caught (and yanked) upstream
-# before it reaches a PR. Security updates are never delayed by it.
+# before it reaches a PR.
 version: 2
 
 updates:
@@ -29,7 +36,7 @@ updates:
       timezone: "UTC"
     cooldown:
       default-days: 7
-    target-branch: "main"
+    target-branch: "develop"
     rebase-strategy: "auto"
     assignees:
       - "alihaidar0"
@@ -55,7 +62,7 @@ updates:
       timezone: "UTC"
     cooldown:
       default-days: 7
-    target-branch: "main"
+    target-branch: "develop"
     rebase-strategy: "auto"
     assignees:
       - "alihaidar0"
@@ -79,10 +86,6 @@ updates:
         update-types:
           - "minor"
           - "patch"
-      docker-security:
-        applies-to: security-updates
-        patterns:
-          - "*"
     open-pull-requests-limit: 5
 
   # ── Global CLI tools baked into the image ────────────────────────────
@@ -95,7 +98,7 @@ updates:
       timezone: "UTC"
     cooldown:
       default-days: 7
-    target-branch: "main"
+    target-branch: "develop"
     rebase-strategy: "auto"
     assignees:
       - "alihaidar0"
@@ -114,8 +117,4 @@ updates:
         update-types:
           - "minor"
           - "patch"
-      tools-security:
-        applies-to: security-updates
-        patterns:
-          - "*"
     open-pull-requests-limit: 5

@@ -1,10 +1,10 @@
 # ============================================================
 #  .github/workflows/lint.yml
 #
-#  Static checks for everything in the repo. Runs on every PR (no path
-#  filter), so its single "Lint" check can be a REQUIRED status check.
-#  PR-only on purpose: the main ruleset requires this check before merging,
-#  so re-running it on the merge commit would only repeat the same work.
+#  Static checks for everything in the repo. Runs on every develop push and
+#  every PR into develop (no path filter), so its single "Lint" check can be
+#  REQUIRED on main: status checks attach to the commit, so the develop → main
+#  PR reuses develop's result instead of running again.
 #
 #    hadolint    docker/Dockerfile.dev (config: .hadolint.yaml)
 #    ShellCheck  scripts/*.sh, tests/*.sh (preinstalled on the runner)
@@ -17,7 +17,10 @@
 name: Lint
 
 on:
+  push:
+    branches: [develop]
   pull_request:
+    branches: [develop]
   workflow_dispatch:
 
 permissions:
@@ -25,7 +28,7 @@ permissions:
 
 concurrency:
   group: lint-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' }}
 
 jobs:
   lint:
