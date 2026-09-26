@@ -1,0 +1,59 @@
+# ============================================================
+#  .github/workflows/labels.yml
+#
+#  Syncs .github/labels.yml to the repository's GitHub labels.
+#
+#  Triggers:
+#    - Push to main where labels.yml (or this file) changed → applies the sync
+#    - PR that changes them                                → dry run; the log shows what merging would change
+#    - Manual dispatch                                     → applies on main, dry run on any other branch
+#
+#  Labels on GitHub that are not in labels.yml are kept (skip-delete),
+#  so labels added in the UI are never removed by a sync.
+# ============================================================
+
+name: Labels
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/labels.yml"
+      - ".github/workflows/labels.yml"
+  pull_request:
+    paths:
+      - ".github/labels.yml"
+      - ".github/workflows/labels.yml"
+  workflow_dispatch:
+
+# Least privilege by default; only the sync job may write (labels are an Issues API).
+permissions:
+  contents: read
+
+concurrency:
+  group: labels-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  sync:
+    name: Sync labels to GitHub
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/labels.yml
+          persist-credentials: false
+
+      - name: Sync labels
+        uses: crazy-max/ghaction-github-labeler@548a7c3603594ec17c819e1239f281a3b801ab4d # v6.0.0
+        with:
+          yaml-file: .github/labels.yml
+          skip-delete: true
+          # Applied only from main; a PR, or a manual run on another branch, only previews.
+          dry-run: ${{ github.ref != 'refs/heads/main' }}

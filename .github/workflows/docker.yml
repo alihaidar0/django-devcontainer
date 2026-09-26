@@ -1,0 +1,274 @@
+# ============================================================
+#  .github/workflows/docker.yml
+#
+#  Tests, publishes, and scans the dev image on Docker Hub.
+#
+#  Principle: test on the PR, publish on merge — each thing runs once.
+#
+#  Jobs:
+#    changes      On PRs, lists the changed files: do the image inputs
+#                 (docker/, scripts/, tests/, .dockerignore, this file) change?
+#    test         Native build per architecture (amd64 on ubuntu-26.04,
+#                 arm64 on ubuntu-26.04-arm — no QEMU) + tests/smoke.sh.
+#                 Nothing is pushed.
+#    image-tests  "Image tests" — the single REQUIRED status check. Always
+#                 reports on PRs: passes when test passed or was skipped
+#                 (no image change), fails otherwise.
+#    publish      Docker's official reusable builder (docker/github-builder):
+#                 native per-arch builds, multi-arch manifest, SBOM, and a
+#                 Sigstore-signed SLSA provenance attestation. Pushes
+#                 :latest, :sha-<short>, :YYYYMMDD. Never on PRs.
+#    scan         Trivy scan of the pushed digest → Security tab (informational).
+#
+#  Triggers:
+#    - PR into main (any change)   → changes → test (only if image inputs
+#                                    changed) → Image tests
+#    - Merge to main (image paths) → publish → scan
+#      No re-test: the PR already tested the exact merged tree, and the
+#      main ruleset requires "Image tests" to pass before merging.
+#    - Weekly schedule (Mon 05:00) → test → publish → scan
+#      Nothing was tested for this build yet, so it is tested first.
+#      Picks up Debian security fixes, apt packages and Starship even when
+#      nothing in the repo changed. (GitHub pauses schedules after 60
+#      days without repository activity — re-enable in the Actions tab.)
+#    - Manual dispatch             → test → publish (toggle) → scan
+#
+#  Required GitHub Secrets:
+#    DOCKERHUB_USERNAME   Docker Hub username
+#    DOCKERHUB_TOKEN      Docker Hub access token (Read/Write)
+#
+#  Hardening: actions and the reusable workflow are pinned to full commit
+#  SHAs (# vX.Y.Z comment, bumped by Dependabot); explicit runner images;
+#  least-privilege permissions; event values reach scripts only via env:.
+# ============================================================
+
+name: Docker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - "scripts/**"
+      - "tests/**"
+      - ".dockerignore"
+      - ".github/workflows/docker.yml"
+  # No path filter on PRs, so "Image tests" can be a required check;
+  # the `changes` job decides whether the image is actually rebuilt.
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "Publish to Docker Hub after the smoke tests pass"
+        type: boolean
+        default: true
+      no_cache:
+        description: "Full rebuild — ignore the layer cache"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE_NAME: docker.io/alihaidar199527/django-devcontainer
+
+jobs:
+
+  changes:
+    name: Detect image changes
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read   # list the PR's changed files
+    outputs:
+      image: ${{ steps.diff.outputs.image }}
+    steps:
+      - name: Did the image inputs change?
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Push is already path-filtered; schedule/dispatch always build.
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+          echo "Changed files:"
+          echo "$files"
+          if grep -qE '^(docker/|scripts/|tests/|\.dockerignore$|\.github/workflows/docker\.yml$)' <<<"$files"; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    name: Test (${{ matrix.arch }})
+    needs: changes
+    # Not on push: the merged tree was already tested on its PR.
+    if: github.event_name != 'push' && needs.changes.outputs.image == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.dev
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          push: false
+          tags: django-devcontainer:test
+          cache-from: type=gha,scope=test-${{ matrix.arch }}
+          cache-to: type=gha,scope=test-${{ matrix.arch }},mode=max
+          no-cache: ${{ inputs.no_cache == true }}
+
+      - name: Smoke test
+        run: docker run --rm -v "$PWD/tests:/tests:ro" django-devcontainer:test bash /tests/smoke.sh
+
+  # The single required status check. A matrix job skipped by `if` reports
+  # an unexpanded name, so the per-arch checks can't be required directly.
+  image-tests:
+    name: Image tests
+    needs: [changes, test]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Check results
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          TEST: ${{ needs.test.result }}
+          IMAGE: ${{ needs.changes.outputs.image }}
+        run: |
+          echo "changes=${CHANGES} image=${IMAGE} test=${TEST}"
+          if [ "$CHANGES" != "success" ]; then echo "❌ change detection failed"; exit 1; fi
+          case "$TEST" in
+            success) echo "✅ image built and smoke-tested on amd64 + arm64" ;;
+            skipped) echo "✅ no image inputs changed — nothing to test" ;;
+            *)       echo "❌ image tests: ${TEST}"; exit 1 ;;
+          esac
+
+  publish:
+    name: Publish
+    needs: [changes, test]
+    # push: tested on the PR (test is skipped); schedule/dispatch: test must pass.
+    if: >-
+      !cancelled() &&
+      needs.changes.result == 'success' &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (github.event_name == 'push' ||
+       github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && inputs.push))
+    uses: docker/github-builder/.github/workflows/build.yml@58cb9f5b71b1836d6f690c1e95effdeb9b98cb8a # v1.17.0
+    permissions:
+      contents: read
+      id-token: write   # keyless (Sigstore) signing of the provenance attestation
+    with:
+      output: image
+      push: true
+      context: .
+      file: docker/Dockerfile.dev
+      platforms: linux/amd64,linux/arm64
+      runner: |
+        default=ubuntu-26.04
+        linux/arm64=ubuntu-26.04-arm
+      cache: ${{ inputs.no_cache != true }}
+      cache-mode: max
+      sbom: true
+      set-meta-labels: true
+      set-meta-annotations: true
+      meta-images: docker.io/alihaidar199527/django-devcontainer
+      meta-tags: |
+        type=raw,value=latest,enable={{is_default_branch}}
+        type=sha,prefix=sha-,format=short
+        type=raw,value={{date 'YYYYMMDD'}}
+    secrets:
+      registry-auths: |
+        - registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  scan:
+    name: Scan
+    needs: publish
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write   # upload Trivy SARIF to the Security tab
+    steps:
+      # Informational only (exit-code 0): a dev image intentionally carries
+      # compilers and headers, so findings are tracked in Security → Code
+      # scanning instead of blocking the publish.
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}@${{ needs.publish.outputs.digest }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Upload Trivy results to Security tab
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Write job summary
+        if: always()
+        env:
+          DIGEST: ${{ needs.publish.outputs.digest }}
+          META_JSON: ${{ needs.publish.outputs.meta-json }}
+          SIGNED: ${{ needs.publish.outputs.signed }}
+          VERIFY: ${{ needs.publish.outputs.cosign-verify-commands }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          {
+            echo "## 🐳 Published dev image"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Image** | \`${IMAGE_NAME}\` |"
+            echo "| **Digest** | \`${DIGEST}\` |"
+            echo "| **Tags** | $(jq -r '[.tags[] | "`" + . + "`"] | join(" ")' <<<"$META_JSON") |"
+            echo "| **Platforms** | \`linux/amd64\`, \`linux/arm64\` |"
+            echo "| **Provenance signed** | \`${SIGNED}\` |"
+            echo "| **Triggered by** | \`${EVENT}\` |"
+            echo "| **Commit** | \`${SHA}\` |"
+            echo ""
+            echo "### Verify the signed provenance"
+            echo '```bash'
+            echo "$VERIFY"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

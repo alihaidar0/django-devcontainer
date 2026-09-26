@@ -1,0 +1,48 @@
+name: Bug report
+description: The image fails to build, a tool is missing or broken, or the shell setup misbehaves.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For security issues use the private advisory form instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what actually happened?
+      placeholder: |
+        Steps:
+        1. ...
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: Paste relevant output (build log, container terminal). Redact tokens and `.env` values.
+      render: text
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - "docker/Dockerfile.dev (image build / installed tools)"
+        - "scripts/shell_setup.sh (prompt, aliases, history)"
+        - "Runtime contract (dev user, paths, PATH, permissions)"
+        - "GitHub workflows / Dependabot"
+        - "README / Docker Hub description"
+        - "Unsure"
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: |
+        Host OS + architecture, Docker Desktop version, and the image digest:
+        `docker image inspect alihaidar199527/django-devcontainer:latest --format '{{index .RepoDigests 0}}'`
+    validations:
+      required: true

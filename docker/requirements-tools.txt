@@ -1,0 +1,26 @@
+# ============================================================
+#  Global developer CLIs baked into the image — pinned versions.
+#
+#  NOT project dependencies: each line is installed with
+#  `uv tool install` into its own isolated environment (see
+#  Dockerfile.dev), and this file is passed as a constraint.
+#  Dependabot's pip ecosystem bumps these pins weekly.
+#
+#  Adding a tool: add `name==version` here AND a matching
+#  `uv tool install` line in Dockerfile.dev.
+# ============================================================
+
+# Code quality
+ruff==0.16.9
+mypy==2.3.1
+pre-commit==4.6.2
+
+# Shells & clients
+ipython==9.17.1
+pgcli==4.7.1
+httpie==3.2.4
+
+# Celery worker/beat bootstrap (installed as one tool: celery --with flower)
+celery==5.6.3
+flower==2.2.0
+watchfiles==1.3.0

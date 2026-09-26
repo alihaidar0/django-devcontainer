@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: What this image is (and isn't)
+    url: https://github.com/alihaidar0/django-devcontainer/blob/main/README.md
+    about: Read this first — Django project setup, compose services, and CI belong in django-template.
+  - name: Security vulnerability
+    url: https://github.com/alihaidar0/django-devcontainer/security/advisories/new
+    about: Report security issues privately, not as a public issue.

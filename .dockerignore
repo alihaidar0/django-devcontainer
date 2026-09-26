@@ -1,0 +1,10 @@
+# ============================================================
+#  .dockerignore — allowlist
+#  The build only needs the files COPY'd by docker/Dockerfile.dev.
+#  Everything else is excluded, so docs/CI/test changes never
+#  bust the build cache and nothing unexpected leaks into it.
+# ============================================================
+
+*
+!scripts/shell_setup.sh
+!docker/requirements-tools.txt

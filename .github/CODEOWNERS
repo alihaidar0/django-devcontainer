@@ -1,0 +1,10 @@
+# Code owners are auto-requested for review on every PR.
+# Pair this with a branch ruleset that enables "Require review from Code Owners".
+# https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+*               @alihaidar0
+
+# Image recipe, shell setup, CI/CD, and repo policy.
+/docker/        @alihaidar0
+/scripts/       @alihaidar0
+/.github/       @alihaidar0

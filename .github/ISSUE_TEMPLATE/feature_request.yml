@@ -1,0 +1,40 @@
+name: Feature / tool request
+description: Propose a new tool, a version upgrade, or a developer-experience improvement for the image.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This image is shared by **every** Django project. Project packages (Django, DRF, psycopg, …),
+        compose services, and app CI belong in `django-template`, not here. Node.js is out of scope by design.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What need does this address across all projects? Link related issues.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Tool/package name, how it is installed (apt, uv pip --system, other), and the expected image-size impact.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of change
+      options:
+        - "New system package (apt)"
+        - "New global Python tool"
+        - "Python / base image upgrade"
+        - "Shell alias / prompt"
+        - "CI / automation"
+        - "Other"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

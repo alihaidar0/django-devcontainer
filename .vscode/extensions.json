@@ -1,0 +1,13 @@
+{
+  // Editor support for the same checks the Lint workflow runs in CI.
+  // VS Code offers to install these when the folder is opened.
+  "recommendations": [
+    "streetsidesoftware.code-spell-checker",
+    "davidanson.vscode-markdownlint",
+    "exiasr.hadolint",
+    "timonwong.shellcheck",
+    "github.vscode-github-actions",
+    "ms-azuretools.vscode-containers",
+    "editorconfig.editorconfig"
+  ]
+}

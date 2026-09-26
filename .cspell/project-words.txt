@@ -1,0 +1,64 @@
+# Project dictionary for cspell (see cspell.json).
+# One word per line, grouped by origin, sorted within each group.
+# Add a word here only when it is a real name — fix actual typos instead.
+
+# People, accounts, projects (incl. VS Code marketplace publishers)
+alihaidar
+exiasr
+Haidar
+koalaman
+repomix
+rhysd
+timonwong
+
+# Tools, services, standards (incl. VS Code marketplace publishers)
+davidanson
+ghaction
+githubcli
+mailpit
+pgcli
+PGDG
+psql
+SARIF
+Sigstore
+SLSA
+
+# Debian packages & system
+dnsutils
+freetype
+libbz
+libfreetype
+libjpeg
+libpq
+libwebp
+netcat
+NOPASSWD
+passwordless
+procps
+
+# Environment variables & shell options
+CLICOLOR
+erasedups
+ignoredups
+isready
+publickey
+PYTHONDONTWRITEBYTECODE
+PYTHONFAULTHANDLER
+PYTHONUNBUFFERED
+PYTHONUTF
+USERPROFILE
+
+# Django management commands & options
+collectstatic
+createsuperuser
+makemigrations
+noinput
+runserver
+
+# Shell aliases & helpers defined in this repo
+cpurge
+dlogs
+ishell
+pmcs
+pmmk
+pmsu

@@ -1,0 +1,66 @@
+# ============================================================
+#  .github/workflows/lint.yml
+#
+#  Static checks for everything in the repo. Runs on every PR (no path
+#  filter), so its single "Lint" check can be a REQUIRED status check.
+#  PR-only on purpose: the main ruleset requires this check before merging,
+#  so re-running it on the merge commit would only repeat the same work.
+#
+#    hadolint    docker/Dockerfile.dev (config: .hadolint.yaml)
+#    ShellCheck  scripts/*.sh, tests/*.sh (preinstalled on the runner)
+#    actionlint  .github/workflows/* (config: .github/actionlint.yaml)
+#    cspell      every tracked file, dotfiles included (config: cspell.json,
+#                project words: .cspell/project-words.txt)
+#    markdownlint every Markdown file (config: .markdownlint-cli2.jsonc)
+# ============================================================
+
+name: Lint
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: hadolint
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: docker/Dockerfile.dev
+          config: .hadolint.yaml
+
+      - name: ShellCheck
+        run: shellcheck --version | head -2 && shellcheck scripts/*.sh tests/*.sh
+
+      - name: actionlint
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+
+      - name: cspell
+        uses: streetsidesoftware/cspell-action@6f3c77c1406bc930f944ba97e9801a22e42caf58 # v9.1.0
+        with:
+          config: cspell.json
+          files: "**"
+          # Check the whole repo on every run, not just the files a PR touched.
+          incremental_files_only: false
+          check_dot_files: true
+          inline: error
+
+      - name: markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        with:
+          globs: "**/*.md"

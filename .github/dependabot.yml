@@ -1,0 +1,121 @@
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Every pinned version in this repo is covered by one ecosystem below:
+#   github-actions  .github/workflows/* — action SHA pins + "# vX.Y.Z" comments,
+#                   including the reusable docker/github-builder workflow
+#   docker          docker/Dockerfile.dev — FROM lines: the python base image
+#                   (tag + digest, every version incl. 3.14 → 3.15) and the uv image
+#   pip             docker/requirements-tools.txt — the global CLIs baked into the
+#                   image (ruff, mypy, pre-commit, ipython, pgcli, httpie, celery,
+#                   flower, watchfiles)
+#
+# Outside Dependabot (no ecosystem exists): Debian/apt packages (gh, PostgreSQL
+# client, …) and the Starship binary. The weekly scheduled rebuild in
+# workflows/docker.yml picks up their latest releases instead.
+#
+# Cooldown: a version update is proposed only once the release is 7 days old,
+# so a compromised or broken release is usually caught (and yanked) upstream
+# before it reaches a PR. Security updates are never delayed by it.
+version: 2
+
+updates:
+  # ── GitHub Actions ────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    target-branch: "main"
+    rebase-strategy: "auto"
+    assignees:
+      - "alihaidar0"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      github-actions-all:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+
+  # ── Docker images (python base + uv) ─────────────────────────────────
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    target-branch: "main"
+    rebase-strategy: "auto"
+    assignees:
+      - "alihaidar0"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    groups:
+      # uv (and any future image) minor + patch land as one PR. Python is
+      # excluded so every Python bump — especially a 3.14 → 3.15 move — gets
+      # its own PR; its smoke test pins the minor, so a minor bump PR fails
+      # CI until tests/smoke.sh is updated on purpose.
+      docker-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "python"
+        update-types:
+          - "minor"
+          - "patch"
+      docker-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+
+  # ── Global CLI tools baked into the image ────────────────────────────
+  - package-ecosystem: "pip"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    target-branch: "main"
+    rebase-strategy: "auto"
+    assignees:
+      - "alihaidar0"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+    groups:
+      # Minor + patch across all tools land as one PR; majors arrive alone.
+      tools-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      tools-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
