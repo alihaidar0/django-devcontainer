@@ -240,6 +240,9 @@ jobs:
   scan:
     name: Scan
     needs: publish
+    # Explicit condition: on a release, `test` is skipped upstream of publish, and
+    # the default success() would then skip this job even though publish succeeded.
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
