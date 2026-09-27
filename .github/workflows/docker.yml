@@ -24,6 +24,8 @@
 #                 Sigstore-signed SLSA provenance attestation. Pushes
 #                 :latest, :sha-<short>, :YYYYMMDD. Only from main.
 #    scan         Trivy scan of the pushed digest → Security tab (informational).
+#                 .github/vex.openvex.json marks findings that don't apply
+#                 (pinned to one version each, with the reason).
 #
 #  Triggers:
 #    - Push to develop / PR into develop → changes → test (if image changed)
@@ -249,11 +251,22 @@ jobs:
       contents: read
       security-events: write   # upload Trivy SARIF to the Security tab
     steps:
+      # Only for .github/vex.openvex.json — the image itself is scanned by digest.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       # Informational only (exit-code 0): a dev image intentionally carries
       # compilers and headers, so findings are tracked in Security → Code
       # scanning instead of blocking the publish.
+      # TRIVY_VEX: version-pinned not_affected statements for packages that
+      # appear only in SBOM files shipped inside pip and virtualenv (bundled or
+      # embedded copies, not installed packages). The reasons are in the file.
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_VEX: .github/vex.openvex.json
         with:
           image-ref: ${{ env.IMAGE_NAME }}@${{ needs.publish.outputs.digest }}
           format: sarif

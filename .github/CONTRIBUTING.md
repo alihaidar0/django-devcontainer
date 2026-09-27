@@ -131,7 +131,12 @@ Every commit is tested **once**; merging into `main` only publishes.
   `YYYYMMDD`, `sha-<short>`. It only ever runs on `main`.
 - **Scan** runs Trivy against the pushed digest and uploads SARIF to the
   Security tab. Informational (`exit-code: 0`): a dev image intentionally ships
-  compilers and headers.
+  compilers and headers. [`vex.openvex.json`](vex.openvex.json) (OpenVEX,
+  passed as `TRIVY_VEX`) marks findings that don't apply as `not_affected`, each
+  pinned to one package version with its reason. It covers packages that appear
+  only in SBOM files shipped inside pip and virtualenv (bundled or embedded copies).
+  Add a statement only after confirming the vulnerable code isn't installed or
+  can't run. Remove it once upstream ships the fix.
 
 GitHub pauses scheduled workflows after 60 days without repository activity —
 re-enable under **Actions → Docker**.

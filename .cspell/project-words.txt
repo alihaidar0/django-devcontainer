@@ -12,10 +12,13 @@ rhysd
 timonwong
 
 # Tools, services, standards (incl. VS Code marketplace publishers)
+APFS
 davidanson
 ghaction
+GHSA
 githubcli
 mailpit
+OpenVEX
 pgcli
 PGDG
 psql
@@ -58,6 +61,8 @@ runserver
 # Shell aliases & helpers defined in this repo
 cpurge
 dlogs
+docstrings
+fvgr
 ishell
 pmcs
 pmmk

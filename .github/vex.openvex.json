@@ -1,0 +1,64 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/alihaidar0/django-devcontainer/blob/main/.github/vex.openvex.json",
+  "author": "Ali Haidar",
+  "timestamp": "2026-09-27T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "GHSA-6v7p-g79w-8964"
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/msgpack@1.1.2"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "msgpack 1.1.2 is not installed. It is only listed in the SBOM files that pip (pip/_vendor/bom.cdx.json) and virtualenv (embedded pip wheels) ship. pip vendors msgpack's pure-Python fallback without the C extension, where the crash lives, and never reuses a streaming decoder after an error. pip >= 26.3 vendors msgpack 1.2.1; drop this statement once the image carries it."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2025-47273",
+        "aliases": ["GHSA-5rjg-fvgr-3xxf"]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/setuptools@70.3.0"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "setuptools 70.3.0 is not installed. It is only listed in the SBOM files that pip (pip/_vendor/bom.cdx.json) and virtualenv (embedded pip wheels) ship, because pip vendors pkg_resources from it. setuptools.package_index, where the path traversal lives, is not part of pip. The installed setuptools is current."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-59890",
+        "aliases": ["GHSA-h35f-9h28-mq5c"]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/setuptools@70.3.0"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "setuptools 70.3.0 is not installed. It is only listed in the SBOM files that pip and virtualenv ship, because pip vendors pkg_resources from it. The sdist / MANIFEST.in code is not part of pip, and the issue needs a macOS APFS/HFS+ filesystem, not the image's Linux one."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-59890",
+        "aliases": ["GHSA-h35f-9h28-mq5c"]
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/setuptools@82.0.1"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "setuptools 82.0.1 is not installed. It is a seed wheel embedded in virtualenv (pre-commit's dependency) and only used for Python 3.9 environments, which the image does not provide. The issue also needs a macOS APFS/HFS+ filesystem, not the image's Linux one."
+    }
+  ]
+}
