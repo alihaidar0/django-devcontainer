@@ -4,9 +4,12 @@
 #  Syncs .github/labels.yml to the repository's GitHub labels.
 #
 #  Triggers:
-#    - Push to main where labels.yml (or this file) changed → applies the sync
-#    - PR that changes them                                → dry run; the log shows what merging would change
-#    - Manual dispatch                                     → applies on main, dry run on any other branch
+#    - Push to develop where labels.yml (or this file) changed → applies the sync
+#    - PR that changes them                                    → dry run; the log shows what merging would change
+#    - Manual dispatch                                         → applies on develop, dry run on any other branch
+#
+#  Labels belong to the repository, not to a release, so they are applied from
+#  the default branch (develop): pr-labels.yml needs them as soon as a PR opens.
 #
 #  Labels on GitHub that are not in labels.yml are kept (skip-delete),
 #  so labels added in the UI are never removed by a sync.
@@ -17,7 +20,7 @@ name: Labels
 on:
   push:
     branches:
-      - main
+      - develop
     paths:
       - ".github/labels.yml"
       - ".github/workflows/labels.yml"
@@ -55,5 +58,5 @@ jobs:
         with:
           yaml-file: .github/labels.yml
           skip-delete: true
-          # Applied only from main; a PR, or a manual run on another branch, only previews.
-          dry-run: ${{ github.ref != 'refs/heads/main' }}
+          # Applied only from develop; a PR, or a manual run on another branch, only previews.
+          dry-run: ${{ github.ref != 'refs/heads/develop' }}
