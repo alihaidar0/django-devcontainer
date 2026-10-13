@@ -10,9 +10,6 @@ Please do **not** open a public issue or PR for anything security-sensitive.
 We aim to acknowledge a report within 3 business days and to agree a
 disclosure timeline with you.
 
-Enable **Settings → Code security → Private vulnerability reporting** on the
-repository so the form above is available.
-
 ## Supported versions
 
 Only the most recent image is supported. Fixes ship as a new image (the next
