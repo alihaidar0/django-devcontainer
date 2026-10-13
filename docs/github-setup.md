@@ -314,16 +314,28 @@ gh api repos/$R/code-scanning/default-setup
 
 ### 10.B Check that the rules block what they should
 
-Run these from a clone of the repository. Each push must be rejected; the last line removes the test commit.
+Run these from a clone of the repository. Each push must be rejected **by the rule** (the message starts with `remote: error: GH013: Repository rule violations found`). A plain `non-fast-forward` message is a normal git refusal, not the ruleset, and proves nothing: that is why each test commit is made on top of the branch it is pushed to.
 
 ```bash
 git config user.name && git config user.email && git remote get-url origin
-git switch develop && git pull --ff-only
+git fetch origin
+
+# develop: a fast-forward push must still be refused
+git switch -C test/rules-develop --no-track origin/develop
 git commit --allow-empty -m "chore: ruleset test"
-git push origin develop          # rejected: develop only accepts pull requests
-git push origin HEAD:main        # rejected: main only accepts pull requests from develop
-git reset --hard origin/develop  # removes the test commit
+git push origin HEAD:develop     # rejected: changes must be made through a pull request
+
+# main: main also holds the release merge commits, so base the test on main itself
+git switch -C test/rules-main --no-track origin/main
+git commit --allow-empty -m "chore: ruleset test"
+git push origin HEAD:main        # rejected: changes must be made through a pull request
+
+# clean up
+git switch develop
+git branch -D test/rules-develop test/rules-main
 ```
+
+If a push is accepted, the ruleset is not active: delete the empty commit through a pull request, and fix the ruleset (section 8) before anything else.
 
 Then, in the web interface:
 

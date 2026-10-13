@@ -161,10 +161,9 @@ def main():
         lines += ["", *[f"- {note}" for note in notes]]
     lines += [
         "",
-        "Dependabot covers the python (patch updates only) and uv `FROM` lines,",
-        "`docker/requirements-tools.txt` and the GitHub Actions; Starship floats and is checked by the",
-        "weekly rebuild. This issue is",
-        "maintained by the `dependency-drift` workflow and closes itself once nothing is behind.",
+        "Dependabot covers the python (patch updates only) and uv `FROM` lines, `docker/requirements-tools.txt` and the GitHub Actions; Starship floats and is checked by the weekly rebuild.",
+        "",
+        "This report is kept by the `dependency-drift` workflow: it opens one issue while something is behind and closes it once nothing is.",
     ]
     with open(report_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("\n".join(lines) + "\n")
