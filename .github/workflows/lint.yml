@@ -6,9 +6,20 @@
 #  REQUIRED on main: status checks attach to the commit, so the develop → main
 #  PR reuses develop's result instead of running again.
 #
+#    PR title    on pull requests: a Conventional Commit (it names the merge
+#                commit, and the release notes are built from those titles)
 #    hadolint    docker/Dockerfile.dev (config: .hadolint.yaml)
-#    ShellCheck  scripts/*.sh, tests/*.sh (preinstalled on the runner)
+#    ShellCheck  scripts/*.sh, tests/*.sh, .github/scripts/*.sh (preinstalled on the runner)
 #    actionlint  .github/workflows/* (config: .github/actionlint.yaml)
+#    script tests .github/scripts/test-reserve-tag.sh, test-check-rebuild.sh and
+#                test-release-notes.sh (stubbed curl, gh and docker), plus a
+#                syntax check of the drift script
+#    format     LF line endings, no trailing whitespace, final newline
+#                (a CRLF shell_setup.sh breaks the image build)
+#    README sync aliases, pinned CLIs, Python/PostgreSQL/Debian versions, the
+#                contract django-template parses, and the workflow list in
+#                README.md match the implementation
+#                (.github/scripts/check-readme-sync.sh)
 #    cspell      every tracked file, dotfiles included (config: cspell.json,
 #                project words: .cspell/project-words.txt)
 #    markdownlint every Markdown file (config: .markdownlint-cli2.jsonc)
@@ -41,6 +52,20 @@ jobs:
         with:
           persist-credentials: false
 
+      # PRs into develop are merged with a merge commit named after the PR title
+      # (merge message setting "Pull request title and description"), and the
+      # release notes are built from those titles: the title must be a Conventional
+      # Commit. Dependabot titles already are.
+      - name: PR title is a Conventional Commit
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! grep -qE '^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\([A-Za-z0-9._/-]+\))?!?: .+' <<< "$PR_TITLE"; then
+            echo "::error title=PR title::Use a Conventional Commit title such as 'fix(docker): correct the apt list' (types: feat fix chore docs style refactor perf test build ci revert)."
+            exit 1
+          fi
+
       - name: hadolint
         uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
@@ -48,10 +73,54 @@ jobs:
           config: .hadolint.yaml
 
       - name: ShellCheck
-        run: shellcheck --version | head -2 && shellcheck scripts/*.sh tests/*.sh
+        run: shellcheck --version | head -2 && shellcheck scripts/*.sh tests/*.sh .github/scripts/*.sh
+
+      - name: Test the tag reservation script
+        run: bash .github/scripts/test-reserve-tag.sh
+
+      - name: Test the weekly rebuild check
+        run: bash .github/scripts/test-check-rebuild.sh
+
+      - name: Test the release notes
+        run: bash .github/scripts/test-release-notes.sh
+
+      - name: Syntax check (drift script)
+        run: python3 -m py_compile .github/scripts/check_drift.py
 
       - name: actionlint
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+
+      # Mirrors the rules in .editorconfig / .gitattributes that tooling can
+      # verify reliably. Markdown is skipped for trailing whitespace (a line
+      # break is two trailing spaces); markdownlint covers it.
+      - name: Format (line endings, whitespace, final newline)
+        run: |
+          status=0
+
+          crlf=$(git ls-files --eol | awk '$1 == "i/crlf" || $1 == "i/mixed" { print $NF }')
+          if [ -n "$crlf" ]; then
+            echo "::error::CRLF line endings found (LF required):"; echo "$crlf"; status=1
+          fi
+
+          trailing=$(git grep -nIE '[[:space:]]+$' -- . ':!*.md' || true)
+          if [ -n "$trailing" ]; then
+            echo "::error::Trailing whitespace found:"; echo "$trailing"; status=1
+          fi
+
+          missing=""
+          while IFS= read -r -d '' file; do
+            if [ -s "$file" ] && grep -Iq . "$file" && [ "$(tail -c1 "$file" | wc -l)" -eq 0 ]; then
+              missing="$missing$file"$'\n'
+            fi
+          done < <(git ls-files -z)
+          if [ -n "$missing" ]; then
+            echo "::error::Missing final newline:"; printf '%s' "$missing"; status=1
+          fi
+
+          exit "$status"
+
+      - name: README sync
+        run: bash .github/scripts/check-readme-sync.sh
 
       - name: cspell
         uses: streetsidesoftware/cspell-action@6f3c77c1406bc930f944ba97e9801a22e42caf58 # v9.1.0

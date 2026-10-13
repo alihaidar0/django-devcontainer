@@ -15,13 +15,14 @@ repository so the form above is available.
 
 ## Supported versions
 
-Only the most recent image is supported. Fixes ship as a new build of `:latest`;
-there are no maintained release branches.
+Only the most recent image is supported. Fixes ship as a new image (the next
+`python-X.Y.Z.R` revision, or a new Python version) that `:latest` and the
+moving `:python-X.Y` tag then point to; there are no maintained release branches.
 
 | Image tag / branch | Supported |
 | --- | --- |
-| `:latest` (built from `main`, rebuilt weekly) | ✅ |
-| older `:YYYYMMDD` / `:sha-xxxxxxx` tags | ❌ — pull `:latest` |
+| `:latest` and the newest `:python-X.Y` (built from `main`, rebuilt weekly when something changed) | ✅ |
+| older `:python-X.Y.Z.R` revisions | ❌ — pull `:latest` |
 
 ## Scope notes
 

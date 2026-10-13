@@ -4,7 +4,11 @@
 
 *               @alihaidar0
 
-# Image recipe, shell setup, CI/CD, and repo policy.
+# Image recipe, shell setup, runtime-contract tests, CI/CD, and repo policy.
 /docker/        @alihaidar0
 /scripts/       @alihaidar0
+/tests/         @alihaidar0
+/docs/          @alihaidar0
 /.github/       @alihaidar0
+/.dockerignore  @alihaidar0
+/.hadolint.yaml @alihaidar0

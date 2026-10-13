@@ -5,3 +5,7 @@ ignored:
   # Pin apt package versions: a dev image deliberately takes the
   # latest Debian security fixes on every (weekly) rebuild.
   - DL3008
+  # Do not use apt-get upgrade: the base image is pinned by digest, so without it
+  # a rebuild would keep every base package at that day's version. The image is
+  # rebuilt weekly with the latest Debian security fixes on purpose.
+  - DL3005
