@@ -6,21 +6,16 @@
 #  Dockerfile.dev), and this file is passed as a constraint.
 #  Dependabot's pip ecosystem bumps these pins weekly.
 #
+#  Only tools that must exist before a project's .venv does belong
+#  here. Project tooling (ruff, mypy, pytest, celery, …) is pinned
+#  by the project in uv.lock instead.
+#
 #  Adding a tool: add `name==version` here AND a matching
 #  `uv tool install` line in Dockerfile.dev.
 # ============================================================
 
-# Code quality
-ruff==0.16.9
-mypy==2.3.1
+# Git hooks — installed by the template's post-create step
 pre-commit==4.6.2
 
-# Shells & clients
-ipython==9.17.1
-pgcli==4.7.1
-httpie==3.2.4
-
-# Celery worker/beat bootstrap (installed as one tool: celery --with flower)
-celery==5.6.3
-flower==2.2.0
+# Worker auto-reload — used by django-template's celery service
 watchfiles==1.3.0

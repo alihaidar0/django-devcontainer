@@ -16,3 +16,7 @@ Desktop.ini
 
 # repomix output
 django-devcontainer-code.xml
+
+# Python bytecode (from running the helper scripts locally)
+__pycache__/
+*.pyc

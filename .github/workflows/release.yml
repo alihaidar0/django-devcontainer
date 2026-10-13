@@ -1,0 +1,111 @@
+# ============================================================
+#  .github/workflows/release.yml
+#
+#  Reusable workflow, called by docker.yml after an image has been published to
+#  Docker Hub. Every release is named after the image it describes: the release
+#  tag is the image tag (python-X.Y.Z.R), so a release, its git tag and its
+#  Docker image always share one name. The git tag already exists: docker.yml
+#  reserves it before publishing (see .github/scripts/reserve-tag.sh), which is
+#  also how a name burned by an immutable release is skipped.
+#
+#  A release is created for every push to main that changes the image and for
+#  the first image of a new Python version (revision 1, for example from the
+#  weekly rebuild or a manual run); other rebuilds only add an image revision.
+#
+#  Notes: the pull command and digest, then the commits since the previous
+#  release grouped by Conventional Commit type (.github/scripts/release-notes.sh).
+#  Each entry is the title of a merged PR (the merge commits since the previous release).
+# ============================================================
+
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Image tag, also used as the release tag (python-X.Y.Z.R)"
+        required: true
+        type: string
+      python_version:
+        description: "Python version baked into the image (X.Y.Z)"
+        required: true
+        type: string
+      image:
+        description: "Docker Hub repository the image was published to"
+        required: true
+        type: string
+      digest:
+        description: "Digest of the published manifest list"
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # Full history and tags: the notes are the commits since the previous release.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          PYTHON_VERSION: ${{ inputs.python_version }}
+          IMAGE: ${{ inputs.image }}
+          DIGEST: ${{ inputs.digest }}
+          NOTES: ${{ runner.temp }}/release-notes.md
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::notice::Release $TAG already exists and is left untouched."
+            exit 0
+          fi
+
+          # The previous release is the newest python-* release other than this one.
+          prev="$(gh release list --limit 50 --json tagName --jq '.[].tagName' \
+            | grep -E '^python-' | grep -vxF "$TAG" | head -1 || true)"
+          if [ -n "$prev" ] && ! git rev-parse --verify --quiet "refs/tags/${prev}^{commit}" > /dev/null; then
+            echo "::warning::Previous release $prev has no tag in this clone; listing the latest commits instead."
+            prev=""
+          fi
+
+          {
+            echo "Dev image for Python ${PYTHON_VERSION}:"
+            echo
+            echo '```bash'
+            echo "docker pull ${IMAGE}:${TAG}"
+            echo '```'
+            echo
+            echo "Digest: \`${DIGEST}\`"
+            echo
+            echo "Moving tags that now point to this image: \`latest\` and \`python-${PYTHON_VERSION%.*}\`."
+            echo
+            if [ -n "$prev" ]; then
+              echo "## Changes since ${prev}"
+            else
+              echo "## Changes"
+            fi
+            echo
+            bash .github/scripts/release-notes.sh "$prev" "$TAG"
+            if [ -n "$prev" ]; then
+              echo
+              echo "**Full diff:** https://github.com/${GH_REPO}/compare/${prev}...${TAG}"
+            fi
+          } > "$NOTES"
+
+          gh release create "$TAG" \
+            --verify-tag \
+            --title "$TAG" \
+            --notes-file "$NOTES" \
+            --latest
+          echo "Published release $TAG" >> "$GITHUB_STEP_SUMMARY"

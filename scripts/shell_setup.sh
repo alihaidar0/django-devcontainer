@@ -16,11 +16,31 @@
 set -euo pipefail
 
 # ── Starship prompt ──────────────────────────────────────────
-curl -fsSL https://starship.rs/install.sh | sh -s -- --yes --bin-dir /usr/local/bin
+# The newest release, downloaded as a tarball and checked against the SHA-256
+# that the same release publishes — no remote install script is run. The tag is
+# resolved once, so the tarball and its checksum always belong together. (This
+# catches a corrupted or tampered download; it cannot catch a release that was
+# itself compromised, which is why the weekly rebuild check compares the
+# installed version with the newest release.)
+case "$(dpkg --print-architecture)" in
+  amd64) starship_target=x86_64-unknown-linux-musl ;;
+  arm64) starship_target=aarch64-unknown-linux-musl ;;
+  *) echo "Unsupported architecture for Starship: $(dpkg --print-architecture)" >&2; exit 1 ;;
+esac
+starship_tag="$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/starship/starship/releases/latest)"
+starship_tag="${starship_tag##*/}"
+starship_url="https://github.com/starship/starship/releases/download/${starship_tag}/starship-${starship_target}.tar.gz"
+starship_dir="$(mktemp -d)"
+curl -fsSL -o "${starship_dir}/starship.tar.gz" "${starship_url}"
+starship_sha="$(curl -fsSL "${starship_url}.sha256")"
+echo "${starship_sha}  ${starship_dir}/starship.tar.gz" | sha256sum --check --status
+tar -xzf "${starship_dir}/starship.tar.gz" -C /usr/local/bin starship
+chmod 0755 /usr/local/bin/starship
+rm -rf "${starship_dir}"
 
 cat > /etc/starship.toml << 'STARSHIP'
 format = """
-[╭─](bold green)$directory$git_branch$git_status$python$docker_context
+[╭─](bold green)$directory$git_branch$git_status$python
 [╰─❯](bold green) """
 
 [directory]
@@ -39,10 +59,6 @@ style = "bold red"
 symbol = " "
 style = "bold yellow"
 format = "[$symbol$version]($style) "
-
-[docker_context]
-symbol = " "
-style = "bold blue"
 STARSHIP
 
 # ── Shared shell config ──────────────────────────────────────
@@ -73,12 +89,6 @@ alias pmcs="python manage.py collectstatic --noinput"
 alias pmt="python manage.py test"
 alias pmsu="python manage.py createsuperuser"
 
-# ── Celery aliases ───────────────────────────────────────────
-alias cw="celery -A config worker -l INFO --pool=solo"
-alias cb="celery -A config beat -l INFO --scheduler django_celery_beat.schedulers:DatabaseScheduler"
-alias cf="celery -A config flower --port=5555"
-alias cpurge="celery -A config purge"
-
 # ── uv aliases ───────────────────────────────────────────────
 alias uvs="uv sync"
 alias uva="uv add"
@@ -94,10 +104,6 @@ alias gp="git push"
 alias gl="git log --oneline --graph --decorate"
 alias gco="git checkout"
 alias gb="git branch"
-
-# ── Docker aliases (work when the host socket is mounted) ────
-alias dps="docker ps"
-alias dlogs="docker logs"
 
 # ── Utility aliases ──────────────────────────────────────────
 alias ll="ls -alFh --color=auto"

@@ -3,8 +3,11 @@
 #
 #  Tests, publishes, and scans the dev image on Docker Hub.
 #
-#  Branch model: develop (direct pushes + Dependabot PRs) ─PR─▶ main.
-#  Principle: every commit is tested once; merging to main only publishes.
+#  Branch model: topic branches + Dependabot ─PR─▶ develop ─PR─▶ main (no direct pushes).
+#  Principle: build and test what you publish. A PR is tested before it merges
+#  into develop, and a release run on main tests again right before it publishes,
+#  because every build runs `apt-get upgrade` and so picks up Debian packages
+#  newer than the ones develop was tested with.
 #
 #  Jobs:
 #    changes      Did the image inputs (docker/, scripts/, tests/,
@@ -12,36 +15,67 @@
 #                   PR into develop → the PR's files
 #                   push to develop → develop vs main (what the next release adds)
 #                   push to main    → this push vs the previous main
+#    rebuild-check  Weekly schedule only: is a new image needed? Simulates
+#                 `apt-get upgrade` inside the published :latest and compares
+#                 the installed Starship with the newest release. The reasons
+#                 are written to the job summary.
+#    dispatch-build  Weekly schedule only, when rebuild-check found something:
+#                 starts this workflow on main (workflow_dispatch, push=true).
+#                 Scheduled workflows run from the DEFAULT branch (develop), and
+#                 develop never publishes, so the build itself runs on main as
+#                 an ordinary manual publish. Nothing changed → nothing starts
+#                 and the run finishes green.
 #    test         Native build per architecture (amd64 on ubuntu-26.04,
-#                 arm64 on ubuntu-26.04-arm — no QEMU) + tests/smoke.sh.
-#                 Nothing is pushed.
-#    image-tests  "Image tests" — REQUIRED on main. Reports on every develop
-#                 push and PR: passes when test passed or was skipped (no
+#                 arm64 on ubuntu-26.04-arm — no QEMU) + tests/smoke.sh, then
+#                 (amd64) a vulnerability gate: Trivy fails the job on a
+#                 CRITICAL finding that has a fix. Accepted findings are
+#                 .github/vex.openvex.json and .github/trivy-ignore.rego, each
+#                 with its reason. Nothing is pushed.
+#    image-tests  "Image tests" — REQUIRED on develop and main. Reports on every
+#                 develop push and PR: passes when test passed or was skipped (no
 #                 image change), fails otherwise. Status checks attach to the
 #                 commit, so the develop → main PR reuses develop's result.
+#    reserve-tag  Names the image python-X.Y.Z.R (Python from the Dockerfile
+#                 FROM line, R = next free image revision) and creates that git
+#                 tag BEFORE anything is pushed, so image, git tag and release
+#                 can never disagree. Only from main, when publishing.
 #    publish      Docker's official reusable builder (docker/github-builder):
 #                 native per-arch builds, multi-arch manifest, SBOM, and a
 #                 Sigstore-signed SLSA provenance attestation. Pushes
-#                 :latest, :sha-<short>, :YYYYMMDD. Only from main.
+#                 python-X.Y.Z.R (immutable) plus the moving tags
+#                 python-X.Y and latest. Only from main.
 #    scan         Trivy scan of the pushed digest → Security tab (informational).
 #                 .github/vex.openvex.json marks findings that don't apply
 #                 (pinned to one version each, with the reason).
+#    release      GitHub Release named after the image tag (release.yml), for
+#                 a push to main and for the first image of a new Python
+#                 version; other rebuilds only add an image revision.
 #
 #  Triggers:
 #    - Push to develop / PR into develop → changes → test (if image changed)
 #                                          → Image tests
-#    - Merge develop → main              → changes → publish → scan
-#      (only when image inputs changed; no re-test — develop's head commit
-#      already carries a green "Image tests", required by the main ruleset)
-#    - Weekly schedule (Mon 05:00, main) → test → publish → scan
+#    - Merge develop → main              → changes → test (again, on the exact
+#                                          state about to be published) →
+#                                          reserve-tag → publish → scan + release
+#      (only when image inputs changed; the PR itself reuses develop's green
+#      "Image tests", required by the main ruleset, but the image is rebuilt
+#      and tested at publish time so the published image is a tested one)
+#    - Weekly schedule (Mon 05:00; runs from the default branch, develop)
+#                                        → rebuild-check → (only if apt or
+#      Starship changed) dispatch-build → [a dispatch run on main:]
+#      test → reserve-tag → publish → scan
 #      Picks up Debian security fixes, apt packages and Starship even when
-#      nothing in the repo changed. (GitHub pauses schedules after 60
-#      days without repository activity — re-enable in the Actions tab.)
-#    - Manual dispatch on main           → test → publish (toggle) → scan
+#      nothing in the repo changed; it adds the next image revision of the
+#      same Python version. A week with nothing new publishes nothing.
+#      (GitHub pauses schedules after 60 days without repository activity —
+#      re-enable in the Actions tab.)
+#    - Manual dispatch on main           → test → reserve-tag → publish
+#                                          (toggle) → scan   (the Run workflow
+#      dropdown defaults to the default branch: pick main)
 #
 #  Required GitHub Secrets:
 #    DOCKERHUB_USERNAME   Docker Hub username
-#    DOCKERHUB_TOKEN      Docker Hub access token (Read/Write)
+#    DOCKERHUB_TOKEN      Docker Hub access token (Read, Write & Delete)
 #
 #  Hardening: actions and the reusable workflow are pinned to full commit
 #  SHAs (# vX.Y.Z comment, bumped by Dependabot); explicit runner images;
@@ -74,9 +108,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: docker-${{ github.event.pull_request.number || github.ref }}
+  # The weekly schedule runs on develop (the default branch) and gets its own
+  # group, so it never cancels, or is cancelled by, a develop push.
+  group: docker-${{ github.event.pull_request.number || (github.event_name == 'schedule' && 'schedule') || github.ref }}
   # A newer develop commit or PR update supersedes the older run; main never cancels.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/develop') }}
 
 env:
   IMAGE_NAME: docker.io/alihaidar199527/django-devcontainer
@@ -85,6 +121,8 @@ jobs:
 
   changes:
     name: Detect image changes
+    # Not on the weekly schedule: that run only decides whether to dispatch a build.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
@@ -129,13 +167,68 @@ jobs:
             echo "image=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # Weekly schedule only. Decides whether the published image has gone stale; when
+  # it has not, nothing else happens. See scripts/check-rebuild.sh.
+  rebuild-check:
+    name: Rebuild needed?
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      rebuild: ${{ steps.check.outputs.rebuild }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Compare the published image with what is available now
+        id: check
+        env:
+          IMAGE: alihaidar199527/django-devcontainer
+          GITHUB_TOKEN: ${{ github.token }}
+          REPORT: ${{ runner.temp }}/rebuild-report.md
+        run: bash .github/scripts/check-rebuild.sh
+
+      - name: Write job summary
+        if: always()
+        env:
+          REPORT: ${{ runner.temp }}/rebuild-report.md
+        run: '[ ! -f "$REPORT" ] || cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"'
+
+  # Scheduled workflows run from the default branch (develop), which never
+  # publishes. When the check found something, start the ordinary build on main:
+  # a workflow_dispatch from the workflow token is allowed to start a run.
+  dispatch-build:
+    name: Start the rebuild on main
+    needs: rebuild-check
+    if: needs.rebuild-check.outputs.rebuild == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Run the Docker workflow on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh workflow run docker.yml --ref main -f push=true
+          echo "Started a Docker run on main (push=true): see the Actions tab." >> "$GITHUB_STEP_SUMMARY"
+
   test:
     name: Test (${{ matrix.arch }})
     needs: changes
-    # Not on push to main: develop's head commit was already tested.
+    # Also on a push to main: the release rebuilds the image with the newest Debian
+    # packages, so it is tested again before it is published. Not on the weekly
+    # schedule (changes is skipped there): the dispatched run on main does the build.
     if: >-
-      needs.changes.outputs.image == 'true' &&
-      !(github.event_name == 'push' && github.ref == 'refs/heads/main')
+      !cancelled() &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.image == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -171,6 +264,24 @@ jobs:
       - name: Smoke test
         run: docker run --rm -v "$PWD/tests:/tests:ro" django-devcontainer:test bash /tests/smoke.sh
 
+      # Gate before anything is published: a CRITICAL finding that already has a fix
+      # fails the job (and with it the required "Image tests" check). Everything else
+      # stays informational in the post-publish scan. Accepted findings live in the
+      # VEX file and the ignore policy, each with its reason. One architecture is
+      # enough: the packages are the same.
+      - name: Vulnerability gate (CRITICAL with a fix)
+        if: matrix.arch == 'amd64'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_VEX: .github/vex.openvex.json
+        with:
+          image-ref: django-devcontainer:test
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          ignore-policy: .github/trivy-ignore.rego
+          exit-code: "1"
+
   # The required status check. A matrix job skipped by `if` reports an
   # unexpanded name, so the per-arch checks can't be required directly.
   image-tests:
@@ -197,19 +308,75 @@ jobs:
             *)       echo "❌ image tests: ${TEST}"; exit 1 ;;
           esac
 
-  publish:
-    name: Publish
+  # Every published image gets a permanent python-X.Y.Z.R name: X.Y.Z is the Python
+  # release in the Dockerfile's FROM line and R is the image revision of that
+  # release. R is the first number that is free on Docker Hub AND for which GitHub
+  # lets the git tag be created (a name used by an immutable release stays reserved
+  # for good, even after the release was deleted). The tag is created here, before
+  # anything is pushed, so the image, the git tag and the release never disagree.
+  # The dotted numeric form lets Dependabot in consuming repositories order and
+  # bump it. This job holds the publish conditions; later jobs follow its result.
+  reserve-tag:
+    name: Reserve image tag
     needs: [changes, test]
-    # Only from main. Push: tested on develop (test skipped), and only when the
-    # image inputs changed. Schedule/dispatch: test must pass first.
+    # Only from main, and only after `test` passed in this same run: a push that
+    # changed the image inputs, or a dispatch (manual, or started by the weekly check).
     if: >-
       !cancelled() &&
       github.ref == 'refs/heads/main' &&
       needs.changes.result == 'success' &&
-      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      needs.test.result == 'success' &&
       ((github.event_name == 'push' && needs.changes.outputs.image == 'true') ||
-       github.event_name == 'schedule' ||
        (github.event_name == 'workflow_dispatch' && inputs.push))
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    # Creating the git tag is the only reason for contents: write; no secret is used.
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.revision.outputs.tag }}
+      revision: ${{ steps.revision.outputs.number }}
+      python_version: ${{ steps.python.outputs.version }}
+      python_line: ${{ steps.python.outputs.line }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            docker/Dockerfile.dev
+            .github/scripts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      # The base image is pinned by digest, so the FROM line names the exact
+      # Python the image contains.
+      - name: Read the Python version
+        id: python
+        run: |
+          version="$(grep -oE '^FROM python:[0-9]+\.[0-9]+\.[0-9]+' docker/Dockerfile.dev | head -1 | cut -d: -f2)"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Could not read the Python version from the FROM line in docker/Dockerfile.dev (got '$version')."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "line=${version%.*}" >> "$GITHUB_OUTPUT"
+
+      - name: Pick the next free revision and reserve its git tag
+        id: revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          IMAGE: alihaidar199527/django-devcontainer
+          PYTHON_VERSION: ${{ steps.python.outputs.version }}
+          TARGET_SHA: ${{ github.sha }}
+        run: bash .github/scripts/reserve-tag.sh
+
+  publish:
+    name: Publish
+    needs: reserve-tag
+    # reserve-tag carries the publish conditions; it is skipped when nothing
+    # should be published, and a skipped need skips this job too.
+    if: ${{ !cancelled() && needs.reserve-tag.result == 'success' }}
     uses: docker/github-builder/.github/workflows/build.yml@58cb9f5b71b1836d6f690c1e95effdeb9b98cb8a # v1.17.0
     permissions:
       contents: read
@@ -229,10 +396,17 @@ jobs:
       set-meta-labels: true
       set-meta-annotations: true
       meta-images: docker.io/alihaidar199527/django-devcontainer
+      # python-X.Y.Z.R  immutable: Python X.Y.Z, image revision R (reserved above)
+      # python-X.Y      moving: newest image of that Python line
+      # latest          moving: newest image
+      # The commit that built an image is not a tag: it is in the image's
+      # org.opencontainers.image.revision label and in the job summary.
+      # `latest` is tied to the publish branch, not to the repository's default
+      # branch, so changing the default branch can never stop or redirect it.
       meta-tags: |
-        type=raw,value=latest,enable={{is_default_branch}}
-        type=sha,prefix=sha-,format=short
-        type=raw,value={{date 'YYYYMMDD'}}
+        type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+        type=raw,value=${{ needs.reserve-tag.outputs.tag }}
+        type=raw,value=python-${{ needs.reserve-tag.outputs.python_line }}
     secrets:
       registry-auths: |
         - registry: docker.io
@@ -242,8 +416,8 @@ jobs:
   scan:
     name: Scan
     needs: publish
-    # Explicit condition: on a release, `test` is skipped upstream of publish, and
-    # the default success() would then skip this job even though publish succeeded.
+    # Explicit condition: the default success() would skip this job after any skipped
+    # upstream job; this one needs only a successful publish.
     if: ${{ !cancelled() && needs.publish.result == 'success' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 15
@@ -251,7 +425,8 @@ jobs:
       contents: read
       security-events: write   # upload Trivy SARIF to the Security tab
     steps:
-      # Only for .github/vex.openvex.json — the image itself is scanned by digest.
+      # For .github/vex.openvex.json and .github/trivy-ignore.rego — the image
+      # itself is scanned by digest.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -263,6 +438,10 @@ jobs:
       # TRIVY_VEX: version-pinned not_affected statements for packages that
       # appear only in SBOM files shipped inside pip and virtualenv (bundled or
       # embedded copies, not installed packages). The reasons are in the file.
+      # ignore-policy: drops whole packages that cannot affect a container
+      # (linux-libc-dev, the kernel headers); the reason is in the file.
+      # limit-severities-for-sarif: without it the SARIF output ignores `severity`
+      # and every fixable Medium/Low finding becomes a Code scanning alert too.
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
@@ -272,7 +451,9 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
           ignore-unfixed: true
+          ignore-policy: .github/trivy-ignore.rego
           exit-code: "0"
 
       - name: Upload Trivy results to Security tab
@@ -308,3 +489,23 @@ jobs:
             echo "$VERIFY"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # The GitHub Release is named after the image it describes (python-X.Y.Z.R) and is
+  # created from the git tag reserved above. It is created for every push to main
+  # that changes the image and for the first image of a new Python version (revision
+  # 1, from the weekly rebuild or a manual run); other rebuilds only add a revision.
+  release:
+    name: Release
+    needs: [reserve-tag, publish]
+    if: >-
+      !cancelled() &&
+      needs.publish.result == 'success' &&
+      (github.event_name == 'push' || needs.reserve-tag.outputs.revision == '1')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.reserve-tag.outputs.tag }}
+      python_version: ${{ needs.reserve-tag.outputs.python_version }}
+      image: alihaidar199527/django-devcontainer
+      digest: ${{ needs.publish.outputs.digest }}

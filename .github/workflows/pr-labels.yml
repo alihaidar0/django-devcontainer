@@ -1,0 +1,122 @@
+# ============================================================
+#  .github/workflows/pr-labels.yml
+#
+#  Adds labels to a pull request from its Conventional Commit title, so every
+#  PR is categorised without anyone remembering to set labels. It only ever
+#  adds labels: anything set by hand is kept. It validates nothing (the title
+#  rule is enforced by Lint) and is not a required check.
+#
+#    feat                        enhancement
+#    fix                         bug
+#    docs                        documentation
+#    ci                          ci
+#    build/chore/refactor/
+#      style/test/perf           chore
+#    scope deps                  dependencies
+#    scope docker                docker
+#    type! or a BREAKING CHANGE  breaking change
+#    develop → main              release
+#
+#  Dependabot labels its own pull requests (dependabot.yml) and is skipped, and
+#  a pull request from a fork gets a read-only token, so it is skipped too.
+#  Every label named here must exist in .github/labels.yml (synced by labels.yml);
+#  a missing one is reported as a warning and skipped.
+#
+#  The title and body are untrusted input: they reach the script only through
+#  environment variables and are never expanded into the shell code.
+# ============================================================
+
+name: PR labels
+
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+    branches: [develop, main]
+
+concurrency:
+  group: pr-labels-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  label:
+    name: Label from the title
+    if: >-
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Add labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          wanted=()
+          type=""
+          scope=""
+          bang=""
+
+          if [[ "${PR_TITLE}" =~ ^([a-z]+)(\(([^\)]+)\))?(!)?:[[:space:]] ]]; then
+            type="${BASH_REMATCH[1]}"
+            scope="${BASH_REMATCH[3]}"
+            bang="${BASH_REMATCH[4]}"
+          else
+            echo "::warning title=PR title::Use a Conventional Commit title such as 'ci(docker): summary'; no label was added from it."
+          fi
+
+          case "${type}" in
+            feat) wanted+=("enhancement") ;;
+            fix) wanted+=("bug") ;;
+            docs) wanted+=("documentation") ;;
+            ci) wanted+=("ci") ;;
+            build | chore | refactor | style | test | perf) wanted+=("chore") ;;
+          esac
+
+          case "${scope}" in
+            deps) wanted+=("dependencies") ;;
+            docker) wanted+=("docker") ;;
+          esac
+
+          if [ -n "${bang}" ] || grep -qE '^BREAKING CHANGE:' <<< "${PR_BODY:-}"; then
+            wanted+=("breaking change")
+          fi
+
+          if [ "${HEAD_REF}" = "develop" ] && [ "${BASE_REF}" = "main" ]; then
+            wanted+=("release")
+          fi
+
+          if [ "${#wanted[@]}" -eq 0 ]; then
+            echo "No label to add."
+            exit 0
+          fi
+
+          # Only labels that exist can be added; labels.yml defines them.
+          existing="$(gh label list --limit 200 --json name --jq '.[].name')"
+          args=()
+          added=()
+          for label in "${wanted[@]}"; do
+            if grep -qxF -- "${label}" <<< "${existing}"; then
+              args+=(--add-label "${label}")
+              added+=("${label}")
+            else
+              echo "::warning::Label '${label}' does not exist; add it to .github/labels.yml."
+            fi
+          done
+
+          if [ "${#args[@]}" -eq 0 ]; then
+            exit 0
+          fi
+
+          gh pr edit "${PR_NUMBER}" "${args[@]}"
+          echo "Added: ${added[*]}" >> "$GITHUB_STEP_SUMMARY"

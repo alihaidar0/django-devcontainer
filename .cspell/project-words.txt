@@ -14,26 +14,27 @@ timonwong
 # Tools, services, standards (incl. VS Code marketplace publishers)
 APFS
 davidanson
+direnv
+endoflife
 ghaction
 GHSA
 githubcli
 mailpit
+msgfmt
 OpenVEX
 pgcli
 PGDG
 psql
+rego
 SARIF
 Sigstore
 SLSA
+xgettext
 
 # Debian packages & system
 dnsutils
-freetype
-libbz
-libfreetype
-libjpeg
+libc
 libpq
-libwebp
 netcat
 NOPASSWD
 passwordless
@@ -53,14 +54,14 @@ USERPROFILE
 
 # Django management commands & options
 collectstatic
+compilemessages
 createsuperuser
+makemessages
 makemigrations
 noinput
 runserver
 
 # Shell aliases & helpers defined in this repo
-cpurge
-dlogs
 docstrings
 fvgr
 ishell

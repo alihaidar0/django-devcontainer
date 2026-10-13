@@ -1,0 +1,83 @@
+# ============================================================
+#  .github/workflows/dependency-drift.yml
+#
+#  Watches what Dependabot cannot see: the PostgreSQL client major, the Debian
+#  release in the python image tag, and the Python minor. Every Monday it
+#  compares them with the newest stable releases (Python: with the newest minor
+#  that Django declares support for, because the image follows Django) and
+#  keeps ONE issue (label
+#  `dependencies`) up to date while anything is behind; the issue closes itself
+#  once everything is current. Dependabot covers the python and uv FROM lines,
+#  the pip pins in docker/requirements-tools.txt and the GitHub Actions; the
+#  weekly rebuild in docker.yml covers apt packages and Starship.
+#
+#  Scheduled workflows run from the default branch (develop), so it compares the
+#  pins on develop, the next release. Needs no secrets.
+# ============================================================
+
+name: Dependency drift
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: Check pinned versions
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            docker/Dockerfile.dev
+            .github/scripts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Compare pins with upstream
+        id: check
+        env:
+          REPORT: ${{ runner.temp }}/drift-report.md
+        run: python3 .github/scripts/check_drift.py "$REPORT"
+
+      - name: Add report to job summary
+        env:
+          REPORT: ${{ runner.temp }}/drift-report.md
+        run: cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open, update or close the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DRIFT: ${{ steps.check.outputs.drift }}
+          REPORT: ${{ runner.temp }}/drift-report.md
+          TITLE: "Dependency drift: pinned versions are behind upstream"
+        run: |
+          number="$(gh issue list --state open --label dependencies --limit 100 \
+            --json number,title --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")"
+
+          if [ "$DRIFT" = "true" ]; then
+            if [ -n "$number" ]; then
+              gh issue edit "$number" --body-file "$REPORT"
+              echo "Updated issue #$number" >> "$GITHUB_STEP_SUMMARY"
+            else
+              gh issue create --title "$TITLE" --label dependencies --body-file "$REPORT"
+              echo "Opened a new drift issue" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          elif [ -n "$number" ]; then
+            gh issue close "$number" --comment "All pinned versions are current again."
+            echo "Closed issue #$number" >> "$GITHUB_STEP_SUMMARY"
+          fi
