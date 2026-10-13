@@ -5,7 +5,9 @@
 #
 #  Triggers:
 #    - Push to main where README.md changed → updates Docker Hub if image exists
-#    - Manual dispatch                      → updates Docker Hub if image exists
+#    - Manual dispatch on main              → updates Docker Hub if image exists
+#      (a dispatch from any other branch, such as the default branch develop,
+#      is skipped: an unmerged README must never reach Docker Hub)
 #
 #  Behaviour:
 #    - Checks if the image exists on Docker Hub before updating
@@ -14,7 +16,7 @@
 #
 #  Required GitHub Secrets:
 #    DOCKERHUB_USERNAME   Docker Hub username
-#    DOCKERHUB_TOKEN      Docker Hub access token (Read/Write)
+#    DOCKERHUB_TOKEN      Docker Hub access token (Read, Write & Delete)
 # ============================================================
 
 name: Docker Hub description
@@ -37,6 +39,9 @@ concurrency:
 jobs:
   update-description:
     name: Update Docker Hub description
+    # The Run workflow dropdown defaults to the default branch (develop): only main
+    # holds the README that is published.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:

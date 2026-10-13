@@ -5,21 +5,24 @@
 #  PHILOSOPHY: Blank canvas, pulled — never built — on laptops.
 #  CI builds this once and publishes it to Docker Hub; every
 #  project generated from django-template pulls it. It carries
-#  the environment (Python, uv, CLI tools, shell) and NO project
-#  packages — Django, DRF, psycopg, … are added per project with
-#  `uv add` into /workspace/.venv.
+#  the environment (Python, uv, clients, shell) and NO project
+#  packages or project tooling — Django, DRF, psycopg, Celery, ruff,
+#  mypy, pytest, … are added per project with `uv add` into
+#  /workspace/.venv, so every project pins its own versions.
 #
 #  Runs as the non-root user `dev` (UID/GID 1000, passwordless
 #  sudo). Full inventory and the runtime contract: README.md.
 # ============================================================
 
 # ── Pinned inputs (literal FROM lines so Dependabot can bump them) ──
-# Dependabot proposes every python bump as its own PR; a minor bump
-# (3.14 → 3.15) fails tests/smoke.sh until the pinned minor there is
-# updated on purpose.
+# Python stays on the newest minor that Django officially supports (3.12–3.14
+# today; https://docs.djangoproject.com/en/stable/faq/install/). Dependabot only
+# proposes Python patch bumps (see its ignore rule); the move to a new minor is
+# deliberate: update this line, tests/smoke.sh and the README together once the
+# weekly drift issue reports that Django supports it.
 FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
 
-FROM python:3.15.0rc2-slim-trixie@sha256:14684656c0069b49e897c63d52bbbe7df8a4bf189911a597403fd3b4ffeaae06
+FROM python:3.14.8-slim-trixie@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 
 # PostgreSQL client major — keep equal to (or newer than) the server
 # in django-template's docker-compose.yml; pg_dump refuses newer servers.
@@ -29,7 +32,7 @@ ARG DEV_UID=1000
 ARG DEV_GID=1000
 
 LABEL org.opencontainers.image.title="django-devcontainer" \
-      org.opencontainers.image.description="Shared Django development image — Python, uv, dev CLIs, Starship. Pull, don't build." \
+      org.opencontainers.image.description="Shared Django development image — Python, uv, PostgreSQL and Redis clients, gettext, Starship. Pull, don't build." \
       org.opencontainers.image.authors="Ali Haidar" \
       org.opencontainers.image.source="https://github.com/alihaidar0/django-devcontainer" \
       org.opencontainers.image.licenses="MIT"
@@ -39,9 +42,9 @@ SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
 # ── Runtime environment ──────────────────────────────────────
 # /workspace/.venv/bin comes first: once a project runs `uv sync`,
-# python / celery / mypy / pytest resolve to the project's own
+# python / celery / ruff / mypy / pytest resolve to the project's own
 # versions in every container (app, celery, celery-beat) with no
-# activation step. Before that, the image's global tools answer.
+# activation step. Before that, only the few global tools below answer.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
@@ -69,21 +72,25 @@ RUN apt-get update \
     && echo "deb [signed-by=/etc/apt/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" \
         > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update \
+    # The base image is pinned by digest, so its packages are frozen at that day.
+    # Upgrading here applies every Debian security fix published since, on each
+    # rebuild (the weekly workflow rebuilds only when apt reports something).
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        # C toolchain — for packages that build native extensions
-        build-essential \
-        # PostgreSQL client (psql, pg_dump, pg_isready) + libpq headers for psycopg
-        "postgresql-client-${PG_MAJOR}" libpq-dev \
-        # SSL / crypto / compression headers
-        libssl-dev libffi-dev zlib1g-dev libbz2-dev \
-        # Image processing headers (Pillow)
-        libjpeg-dev libpng-dev libwebp-dev libfreetype-dev \
-        # XML headers (lxml)
-        libxml2-dev libxslt1-dev \
+        # C toolchain + libpq headers — the one source build a Django stack
+        # needs (psycopg[c], psycopg2): it has no prebuilt wheel. Pillow, lxml,
+        # cffi and psycopg[binary] ship wheels for amd64 and arm64, so their
+        # -dev headers are deliberately absent; a project that hits a package
+        # without a wheel installs its headers with sudo apt-get.
+        build-essential libpq-dev \
+        # PostgreSQL client (psql, pg_dump, pg_isready) from PGDG
+        "postgresql-client-${PG_MAJOR}" \
+        # GNU gettext — Django's makemessages / compilemessages (i18n)
+        gettext \
         # Redis CLI — inspect cache / Celery broker from the terminal
         redis-tools \
         # Git over SSH, GitHub CLI, commit signing
-        git git-lfs gh openssh-client gnupg \
+        git gh openssh-client gnupg \
         # Shell utilities
         sudo less jq unzip vim nano htop tree procps \
         # Network diagnostics
@@ -96,31 +103,35 @@ RUN apt-get update \
 COPY --from=uv /uv /uvx /usr/local/bin/
 
 # ── Global developer tools ───────────────────────────────────
-# Each CLI lives in its own isolated uv tool environment under
-# /opt/uv-tools (linked into /usr/local/bin), so the system Python
-# stays clean and tools never conflict with each other or with a
-# project's .venv. Tool versions are pinned in
+# Only tools that must exist before a project's .venv does, and that
+# carry no project dependencies. Each lives in its own isolated uv tool
+# environment under /opt/uv-tools (linked into /usr/local/bin), so the
+# system Python stays clean. Versions are pinned in
 # docker/requirements-tools.txt (passed as a constraint; Dependabot
 # bumps it). The file stays in the image for reference and for
 # tests/smoke.sh, which checks every pin was honoured.
 #
-# WHY celery/flower/watchfiles are baked in:
-#   the celery and celery-beat containers start from this image
-#   before `uv sync` has run. Once the project's .venv exists, its
-#   own celery takes precedence through PATH (see ENV above).
+#   pre-commit  the template's post-create step runs `pre-commit install`
+#               before any venv exists; hooks pin their own tool versions.
+#   watchfiles  django-template's celery service restarts the worker with
+#               `watchfiles` on code changes, before and after `uv sync`.
+#
+# Everything else (ruff, mypy, pytest, celery, flower, ipython, …) is
+# project-level: the project pins it in uv.lock. Ad-hoc tools run with
+# `uvx` (for example `uvx pgcli`, `uvx httpie`).
+#
+# The last step removes pip: uv is the installer here (`uv add`,
+# `uv sync`, `uv pip`, `uv tool`) and needs none. That also removes
+# pip's vendored copies of urllib3, msgpack and friends, which scanners
+# flag and no pip release fixes yet. `python -m ensurepip` restores it.
 COPY docker/requirements-tools.txt /opt/uv-tools/requirements-tools.txt
 RUN UV_TOOL_DIR=/opt/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin \
     UV_PYTHON_DOWNLOADS=never UV_NO_CACHE=1 \
     bash -c ' \
         c=/opt/uv-tools/requirements-tools.txt \
-        && uv tool install -c "$c" ruff \
-        && uv tool install -c "$c" mypy \
         && uv tool install -c "$c" pre-commit \
-        && uv tool install -c "$c" ipython \
-        && uv tool install -c "$c" pgcli \
-        && uv tool install -c "$c" httpie \
-        && uv tool install -c "$c" celery --with flower \
         && uv tool install -c "$c" watchfiles \
+        && python -m pip uninstall --yes pip \
     '
 
 # ── Shell: Starship prompt, aliases, history ─────────────────
@@ -152,7 +163,7 @@ LABEL devcontainer.metadata='[{"remoteUser":"dev","updateRemoteUserUID":true}]'
 USER ${DEV_USER}
 WORKDIR /workspace
 
-# 8000 — Django dev server · 5555 — Flower (Celery monitoring UI)
-EXPOSE 8000 5555
+# 8000 — Django dev server
+EXPOSE 8000
 
 CMD ["sleep", "infinity"]

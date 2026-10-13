@@ -4,21 +4,26 @@
 #   github-actions  .github/workflows/* — action SHA pins + "# vX.Y.Z" comments,
 #                   including the reusable docker/github-builder workflow
 #   docker          docker/Dockerfile.dev — FROM lines: the python base image
-#                   (tag + digest, every version incl. 3.14 → 3.15) and the uv image
+#                   (tag + digest; patch updates only, because Python follows the
+#                   versions Django supports) and the uv image
 #   pip             docker/requirements-tools.txt — the global CLIs baked into the
-#                   image (ruff, mypy, pre-commit, ipython, pgcli, httpie, celery,
-#                   flower, watchfiles)
+#                   image (pre-commit, watchfiles); project tooling such as ruff or
+#                   mypy is pinned by each project, not here
 #
 # Outside Dependabot (no ecosystem exists): Debian/apt packages (gh, PostgreSQL
 # client, …) and the Starship binary. The weekly scheduled rebuild in
 # workflows/docker.yml picks up their latest releases instead.
 #
 # Branch model: every PR targets `develop` (target-branch below); releases
-# reach `main` through the develop → main PR. GitHub always opens *security*
-# update PRs against the default branch (target-branch doesn't apply to them),
-# and main only accepts PRs from develop — so the "Dependabot security updates"
-# repository setting stays OFF. Alerts stay on, and these weekly version updates
-# carry the fixed versions through develop.
+# reach `main` through the develop → main PR. `develop` is also the repository's
+# default branch, and GitHub opens *security* update PRs against the default
+# branch (target-branch doesn't apply to them) — so those land on `develop` too,
+# and the "Dependabot security updates" repository setting is ON.
+#
+# Review: these PRs wait for the owner's monthly pass (review, let `Lint` and
+# `Image tests` run, merge, then release develop → main). The limit of 10
+# open PRs per ecosystem keeps Dependabot from pausing while they wait. Nothing is
+# ignored: every version is proposed, majors as their own PRs.
 #
 # Cooldown: a version update is proposed only once the release is 7 days old,
 # so a compromised or broken release is usually caught (and yanked) upstream
@@ -50,7 +55,7 @@ updates:
       github-actions-all:
         patterns:
           - "*"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
 
   # ── Docker images (python base + uv) ─────────────────────────────────
   - package-ecosystem: "docker"
@@ -72,11 +77,20 @@ updates:
     labels:
       - "dependencies"
       - "docker"
+    # Python follows Django, not the other way round: only the Python versions
+    # Django officially supports are proposed. Django supports 3.12–3.14, so patch
+    # bumps within the pinned minor are welcome and every new minor (3.15, …) is
+    # ignored. The weekly drift issue (workflows/dependency-drift.yml) says when
+    # Django adds support for a newer Python; then move the FROM line,
+    # tests/smoke.sh and the README together, by hand.
+    ignore:
+      - dependency-name: "python"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
     groups:
       # uv (and any future image) minor + patch land as one PR. Python is
-      # excluded so every Python bump — especially a 3.14 → 3.15 move — gets
-      # its own PR; its smoke test pins the minor, so a minor bump PR fails
-      # CI until tests/smoke.sh is updated on purpose.
+      # excluded so every Python bump gets its own PR, with its own review.
       docker-minor-patch:
         applies-to: version-updates
         patterns:
@@ -86,7 +100,7 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
 
   # ── Global CLI tools baked into the image ────────────────────────────
   - package-ecosystem: "pip"
@@ -117,4 +131,4 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
