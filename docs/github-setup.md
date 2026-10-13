@@ -224,6 +224,25 @@ The page is called **Advanced Security** in the settings menu, and **Code securi
 | Code scanning → CodeQL analysis | **Set up → Default**, language **Actions** (it analyses the workflow files), then **Enable CodeQL** |
 | Secret Protection → Secret scanning | Enable |
 | Secret Protection → Push protection | **Enable** |
+| Dependency graph → Automatic dependency submission | Leave **Disabled**: no ecosystem here needs build-time submission |
+| Dependabot auto-triage rules | GitHub's preset rule may stay enabled; it only dismisses low-impact alerts for development-only dependencies |
+| Code scanning → Protection rules (check-runs failure threshold) | Leave the defaults: no ruleset requires code scanning |
+
+On the page, **Private vulnerability reporting**, **Secret scanning** and **Push protection** show a **Disable** button when they are on, so a red **Disable** button means the feature is enabled.
+
+### 6.1 Reading the Security tab
+
+The tab opens on the default branch, `develop`. The Trivy scan runs after each publish on `main`, so use the branch filter `branch:main` to see its findings, and the tool filter to tell **CodeQL** (workflow files) from **Trivy** (the image).
+
+| Page | Expected | What to do otherwise |
+| --- | --- | --- |
+| Code scanning, Trivy (`branch:main`) | Only HIGH or CRITICAL findings that have a fix, ideally none | Open the alert and read the package and the fixed version. Rebuild (every build runs `apt-get upgrade`) or bump the pin. If the finding cannot affect a development container, add a `not_affected` statement with a written reason to `.github/vex.openvex.json`. Dismiss an alert in the UI only when it is a false positive, with that reason |
+| Code scanning, CodeQL | None. It reads the workflow files | Fix the workflow (usually a missing `permissions:` block or an unsafe `${{ }}` in a `run:` script) in a pull request |
+| Dependabot | No alerts. Dependabot pull requests are listed under Pull requests, not here | Merge the pull request that Dependabot opened for the alert, after `Image tests` is green |
+| Secret scanning | No alerts | Revoke the exposed credential first, then clean up. Push protection should have blocked the push in the first place |
+| Security policy and Advisories | `SECURITY.md` is shown; no advisories | Reports arrive privately through the reporting form |
+
+After the first publish, the Trivy list is also what decides which statements in `.github/vex.openvex.json` are still needed (section 13).
 
 **Dependabot security updates are on** because GitHub opens those pull requests against the default branch, which is `develop`: they are tested by `Image tests` and reach `main` with the next release like every other change. The Trivy scan after each publish uploads its findings to the same **Security → Code scanning** tab.
 
@@ -314,16 +333,28 @@ gh api repos/$R/code-scanning/default-setup
 
 ### 10.B Check that the rules block what they should
 
-Run these from a clone of the repository. Each push must be rejected; the last line removes the test commit.
+Run these from a clone of the repository. Each push must be rejected **by the rule** (the message starts with `remote: error: GH013: Repository rule violations found`). A plain `non-fast-forward` message is a normal git refusal, not the ruleset, and proves nothing: that is why each test commit is made on top of the branch it is pushed to.
 
 ```bash
 git config user.name && git config user.email && git remote get-url origin
-git switch develop && git pull --ff-only
+git fetch origin
+
+# develop: a fast-forward push must still be refused
+git switch -C test/rules-develop --no-track origin/develop
 git commit --allow-empty -m "chore: ruleset test"
-git push origin develop          # rejected: develop only accepts pull requests
-git push origin HEAD:main        # rejected: main only accepts pull requests from develop
-git reset --hard origin/develop  # removes the test commit
+git push origin HEAD:develop     # rejected: changes must be made through a pull request
+
+# main: main also holds the release merge commits, so base the test on main itself
+git switch -C test/rules-main --no-track origin/main
+git commit --allow-empty -m "chore: ruleset test"
+git push origin HEAD:main        # rejected: changes must be made through a pull request
+
+# clean up
+git switch develop
+git branch -D test/rules-develop test/rules-main
 ```
+
+If a push is accepted, the ruleset is not active: delete the empty commit through a pull request, and fix the ruleset (section 8) before anything else.
 
 Then, in the web interface:
 
@@ -432,12 +463,14 @@ You do not need to delete the GitHub releases or git tags, and deleting them wou
 Some things can only be confirmed by a real run. Go through them once, after the first image is published and the first Monday has passed.
 
 1. **The vulnerability gate passed.** In the first `Image tests` run, `Test (amd64)` ends with `Vulnerability gate (CRITICAL with a fix)`. If it failed, the log names the package: rebuild (`apt-get upgrade` normally fixes it) or, only when the finding cannot affect a development container, add a `not_affected` statement with a written reason to `.github/vex.openvex.json`.
-2. **Prune the VEX file.** The image no longer ships pip, so the statements about pip's bundled copies (msgpack, setuptools) should be unnecessary. Open the first **Scan** job and the Security → Code scanning tab: remove every statement the scan no longer needs, keep the one for virtualenv's seed wheel if it still appears, and note the result in the commit message.
+2. **The VEX file is pruned.** The image has no pip, so the statements about pip's bundled msgpack and setuptools 70.3.0 were removed after checking that neither package exists in the published image. One statement remains: virtualenv's embedded setuptools 82.0.1 seed wheel, which is still present under `virtualenv/seed/wheels/embed`. Re-check it whenever `pre-commit` is bumped: if `find /opt/uv-tools -name 'setuptools-82*'` finds nothing, drop the statement. A statement is only ever removed after confirming the package is gone from the image, because a statement that works also hides its finding, so an empty alert list proves nothing.
+
+   **Known open findings.** Four HIGH alerts on `usr/bin/gh` (Go standard library and `golang.org/x/net`: HTTP/2 SETTINGS frames, HTTP Range headers, crypto/tls ECH). They come from the Go version the GitHub CLI release was built with, and `gh` 2.102.0 is the newest release, so there is nothing to update yet. They close by themselves when a newer `gh` is built with a fixed Go: the weekly rebuild check notices the new apt package, rebuilds on `main`, and the next scan closes them. Do not add a VEX statement for them: they are real findings, only not fixable here.
 3. **Dependabot respects the Python rule.** After the first Monday, the Dependabot pull requests must contain no Python 3.15 (or newer minor) update, only patch updates. If a 3.15 pull request appears, the `ignore` rule in `.github/dependabot.yml` did not match: close it with the comment `@dependabot ignore this minor version` and tell whoever maintains the repository.
 4. **The weekly run behaves.** The Docker run of the first Monday (05:00 UTC, on `develop`) shows `Rebuild needed?` with a summary. If it found something, a `Start the rebuild on main` job appears and a new Docker run on `main` starts with the event `workflow_dispatch`.
 5. **The drift issue is quiet.** **Dependency drift** (06:00 UTC) should not open an issue while Python, PostgreSQL and Debian are current. It reports Python 3.15 as informational only.
 6. **The first release reads well.** The release `python-X.Y.Z.1` lists the pull request titles since the previous release, grouped by type, without the `develop` → `main` merge itself.
-7. **Optional hardening.** Settings → Actions → General → **Require actions to be pinned to a full-length commit SHA** (section 4).
+7. **Pinning is enforced.** Settings → Actions → General → **Require actions to be pinned to a full-length commit SHA** (section 4) is ticked. If a later run fails because a called workflow uses an unpinned action, the message names it: untick the box until that workflow is updated.
 8. **Sibling repository and notes.** `django-template` documents the tags `latest`, `python-3.14` and `python-X.Y.Z.R`, adds `flower` to its dependency list for its Flower command, and states the Django 6.x minimum (it uses Django 6's CSP middleware). Project notes that describe this image are updated to match.
 
 ## Settings checklist
