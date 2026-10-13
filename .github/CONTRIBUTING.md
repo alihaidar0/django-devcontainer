@@ -295,7 +295,8 @@ The VS Code *Code Spell Checker* extension (recommended in
 | Workflow | What |
 | --- | --- |
 | [`dockerhub-description.yml`](workflows/dockerhub-description.yml) | Syncs `README.md` + repo description to Docker Hub on merge to `main` (no PR trigger — unmerged docs never publish) |
-| [`labels.yml`](workflows/labels.yml) | Syncs [`labels.yml`](labels.yml) on `main`; PRs get a dry run; labels not in the file are kept |
+| [`labels.yml`](workflows/labels.yml) | Syncs [`labels.yml`](labels.yml) when it changes on `develop`; PRs get a dry run; labels not in the file are kept |
+| [`pr-labels.yml`](workflows/pr-labels.yml) | Adds labels to a PR from its Conventional Commit title (`feat` → `enhancement`, `fix` → `bug`, `docs` → `documentation`, `ci` → `ci`, other types → `chore`, scope `deps` / `docker`, `!` → `breaking change`, `develop` → `main` → `release`). It only adds, never removes, and skips Dependabot (which labels itself) |
 | [`dependency-drift.yml`](workflows/dependency-drift.yml) | Mondays 06:00 UTC: one issue for the PostgreSQL major, the Debian release and the Python minor that are behind upstream (Python is compared with what **Django supports**, not with the newest Python); closes itself when current |
 
 Required secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (Docker Hub personal
@@ -350,8 +351,8 @@ Weekly (Monday 09:00 UTC), PRs against **`develop`**, **7-day cooldown**:
   what's installed, so a tool PR can't silently resolve to another version.
 - Every label Dependabot applies must exist in [`labels.yml`](labels.yml). The file
   lists only labels that something uses (Dependabot's four, the two issue-form
-  labels, and `breaking change`); GitHub's built-in labels stay as they are, because
-  the sync never deletes.
+  labels, the ones [`pr-labels.yml`](workflows/pr-labels.yml) adds, and `breaking change`);
+  GitHub's built-in labels stay as they are, because the sync never deletes.
 - Only Debian/apt packages (gh, PostgreSQL client, …) and the Starship binary
   are outside Dependabot — no ecosystem exists for them. The weekly rebuild
   check keeps them current: it rebuilds when apt has upgrades or Starship has a
@@ -425,3 +426,4 @@ Node is repository tooling only and never enters the image.
 | `workflows/branch-policy.yml` | `PR source` — only `develop` may open PRs into `main` |
 | `workflows/dockerhub-description.yml` | README → Docker Hub |
 | `workflows/labels.yml` | `labels.yml` → GitHub labels |
+| `workflows/pr-labels.yml` | Labels a PR from its title |

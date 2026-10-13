@@ -229,7 +229,9 @@ The page is called **Advanced Security** in the settings menu, and **Code securi
 
 ## 7. Labels
 
-Labels are defined in `.github/labels.yml`. The **Labels** workflow syncs them to GitHub when that file changes on `main`; on a new repository run it once by hand (Actions → **Labels** → **Run workflow**, branch `main`). Dependabot applies `dependencies`, `github-actions`, `docker` and `python` itself, so every one of those must exist in the file.
+Labels are defined in `.github/labels.yml`. The **Labels** workflow syncs them to GitHub when that file changes on `develop` (labels belong to the repository, so they come from the default branch); on a new repository run it once by hand (Actions → **Labels** → **Run workflow**, branch `develop`). Dependabot applies `dependencies`, `github-actions`, `docker` and `python` itself, so every one of those must exist in the file.
+
+The **PR labels** workflow adds labels to every pull request from its Conventional Commit title, so nobody has to set them: `feat` → `enhancement`, `fix` → `bug`, `docs` → `documentation`, `ci` → `ci`, `build` / `chore` / `refactor` / `style` / `test` / `perf` → `chore`, scope `deps` → `dependencies`, scope `docker` → `docker`, a `!` or a `BREAKING CHANGE:` line → `breaking change`, and a pull request from `develop` into `main` → `release`. It only adds labels (hand-set ones stay), skips Dependabot pull requests (Dependabot labels its own) and skips forks. A label that does not exist yet is reported as a warning and skipped, which is why the sync has to run first on a new repository. It is not a required check.
 
 ## 8. Rulesets
 
@@ -260,7 +262,7 @@ On a brand-new repository, in this order:
 2. Create the Docker Hub repository, its categories and the access token (section 2).
 3. Confirm there are no environments, and add the two repository secrets (section 5).
 4. Apply the settings in sections 3, 4, 5.1 and 6. Set the default branch to `develop` last, after both branches exist.
-5. Run the **Labels** workflow once by hand (section 7).
+5. Run the **Labels** workflow once by hand on `develop` (section 7).
 6. Publish the first image. The rulesets are not active yet: push an image change to `develop`, wait for `Image tests` to go green, then open the pull request `develop` → `main` and merge it with a merge commit. Wait for **Docker** to finish and for the first tag and release `python-X.Y.Z.1` to appear. Alternatively run **Docker** by hand (Actions → **Docker** → **Run workflow**, branch `main`).
 7. Run **Docker Hub description** once by hand on `main`, so the Docker Hub overview shows the README.
 8. Import the three rulesets (section 8).
@@ -455,7 +457,7 @@ A one-page list to tick off after a recovery. Each line points to the section wi
 | ☐ | GitHub | Environments: none | 5.1 |
 | ☐ | GitHub | Secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` only | 5.2 |
 | ☐ | GitHub | Advanced Security: private vulnerability reporting, dependency graph, Dependabot alerts, malware alerts and security updates, CodeQL (Actions), secret scanning, push protection | 6 |
-| ☐ | GitHub | Labels workflow run once | 7 |
+| ☐ | GitHub | Labels workflow run once on `develop` | 7 |
 | ☐ | GitHub | First image published, Docker Hub description run once | 9 |
 | ☐ | GitHub | Rulesets imported: `protect-main`, `protect-develop`, `protect-tags` | 8 |
 | ☐ | GitHub | Protection and tags verified | 10 |

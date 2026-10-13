@@ -123,9 +123,9 @@ Why this repository works the way it does. Each entry says what was decided, why
 
 ### 18. Rulesets, secrets and labels
 
-- **Decision:** the rulesets are stored as importable JSON; required checks are `PR source`, `Lint` and `Image tests` (never the per-architecture jobs, because a skipped matrix job reports an unexpanded name). The Docker Hub credentials are repository secrets, not an environment. Labels are limited to those something uses.
+- **Decision:** the rulesets are stored as importable JSON; required checks are `PR source`, `Lint` and `Image tests` (never the per-architecture jobs, because a skipped matrix job reports an unexpanded name). The Docker Hub credentials are repository secrets, not an environment. Labels are limited to those something uses, are synced from `develop` (the default branch), and `pr-labels.yml` adds them to each PR from its Conventional Commit title; it only adds, and is not a required check.
 - **Why:** the JSON files make a recreated repository a matter of importing three files. A job that calls a reusable workflow cannot declare an environment, so repository secrets are the only option for the publish job.
-- **Where:** `.github/rulesets/`, `.github/labels.yml` and its workflow, [`github-setup.md`](github-setup.md).
+- **Where:** `.github/rulesets/`, `.github/labels.yml` and its two workflows (`labels.yml`, `pr-labels.yml`), [`github-setup.md`](github-setup.md).
 
 ## Keeping the documentation true
 
@@ -148,7 +148,7 @@ Why this repository works the way it does. Each entry says what was decided, why
 | ripgrep, fzf, direnv, graphviz, a Docker CLI | Not needed by every project; VS Code ships its own search, and the Docker CLI is useless without a mounted socket |
 | `-dev` headers for Pillow, lxml, cffi | Wheels exist for both architectures (decision 5) |
 | Python 3.15 | Not yet supported by any Django release (decision 3) |
-| Renovate and a PR-label workflow | Dependabot covers every pin; release notes come from PR titles, not labels |
+| Renovate | Dependabot covers every pin |
 | A `docker-hub` environment | A reusable-workflow caller cannot declare one (decision 18) |
 | Required reviewers | There is one maintainer, and an author cannot approve their own PR; raise the count when a second maintainer joins |
 | OpenSSF Scorecard and a dependency-review workflow | Optional extras; Dependabot alerts, CodeQL, secret scanning and the Trivy gate already cover the same ground |

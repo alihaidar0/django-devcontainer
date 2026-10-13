@@ -1,8 +1,12 @@
 # Repository labels as code, synced by workflows/labels.yml. Only labels that
 # something uses are listed:
 #   dependencies · github-actions · docker · python   applied by Dependabot (dependabot.yml)
-#   bug · enhancement                                  applied by the issue forms
+#   bug · enhancement                                  applied by the issue forms and by pr-labels.yml
+#   documentation · ci · chore · release               applied by pr-labels.yml from the PR title
 #   breaking change                                    marks a runtime-contract change on a PR
+# pr-labels.yml (feat → enhancement, fix → bug, docs → documentation, ci → ci,
+# build/chore/refactor/style/test/perf → chore, scope deps/docker, type! → breaking change,
+# develop → main → release) can only add labels that exist here.
 - name: "dependencies"
   color: "0075ca"
   description: "Automated dependency update opened by Dependabot"
@@ -23,4 +27,16 @@
   description: "Something is broken or behaving incorrectly"
 - name: "enhancement"
   color: "84b6eb"
-  description: "Improvement to an existing feature or behaviour"
+  description: "New feature or improvement to an existing one"
+- name: "documentation"
+  color: "0075ca"
+  description: "Changes to README, docs or comments only"
+- name: "ci"
+  color: "bfd4f2"
+  description: "Changes to workflows, scripts or other repository automation"
+- name: "chore"
+  color: "fef2c0"
+  description: "Maintenance with no functional impact: build, refactor, style, tests"
+- name: "release"
+  color: "5319e7"
+  description: "Release pull request from develop to main"

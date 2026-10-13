@@ -274,7 +274,8 @@ django-devcontainer/
 │   │   ├── branch-policy.yml        # PR source: only develop may open PRs into main
 │   │   ├── lint.yml                 # hadolint · ShellCheck · actionlint · format · README sync · cspell · markdownlint
 │   │   ├── dockerhub-description.yml# README.md → Docker Hub
-│   │   └── labels.yml               # labels.yml → GitHub labels
+│   │   ├── labels.yml               # labels.yml → GitHub labels
+│   │   └── pr-labels.yml            # Labels a PR from its Conventional Commit title
 │   ├── rulesets/                    # Rulesets as importable JSON (protect-main, protect-develop, protect-tags)
 │   ├── scripts/                     # Helper scripts and their tests: tag reservation, release notes,
 │   │                                #   weekly rebuild check, drift check, README sync (see CONTRIBUTING)
