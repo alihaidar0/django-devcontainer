@@ -154,6 +154,7 @@ RUN groupadd --gid "${DEV_GID}" "${DEV_USER}" \
     && install -d -o "${DEV_USER}" -g "${DEV_USER}" \
         "/home/${DEV_USER}/.cache" \
         "/home/${DEV_USER}/.cache/uv" \
+        "/home/${DEV_USER}/.cache/pre-commit" \
         "/home/${DEV_USER}/.shell_history" \
         /workspace
 
