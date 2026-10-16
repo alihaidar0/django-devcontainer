@@ -99,7 +99,7 @@ What a project using this image can rely on:
 | --- | --- |
 | **User** | `dev` — UID/GID `1000`, passwordless `sudo`. Declared in the image's `devcontainer.metadata` label, so `devcontainer.json` needs no `remoteUser`. |
 | **Workspace** | `/workspace` (owned by `dev`) — mount your project here |
-| **Home** | `/home/dev` — `.ssh` (0700), `.cache/uv`, `.shell_history` pre-created and owned by `dev`, so named volumes mounted there inherit the right ownership |
+| **Home** | `/home/dev` — `.ssh` (0700), `.cache/uv`, `.cache/pre-commit`, `.shell_history` pre-created and owned by `dev`, so named volumes mounted there inherit the right ownership |
 | **PATH** | `/workspace/.venv/bin` comes **first** — in every container and every shell, login shells included (`/etc/profile` would otherwise reset it; VS Code probes the environment with one). After `uv sync`, `python`, `celery`, `ruff`, `mypy`, `pytest` … resolve to the project's versions — no activation step. Before that, only the image's two global tools (`pre-commit`, `watchfiles`) answer. |
 | **Env** | `UV_LINK_MODE=copy` (cache and bind-mounted `.venv` live on different filesystems), `PYTHONPATH=/workspace` in interactive shells, `PYTHONUNBUFFERED=1`, UTF-8 locale |
 | **Ports** | `8000` Django dev server (other ports, such as Flower's `5555`, are published by your compose file) |
@@ -128,11 +128,13 @@ services:
     volumes:
       - .:/workspace:cached
       - uv-cache:/home/dev/.cache/uv
+      - pre-commit-cache:/home/dev/.cache/pre-commit
       - shell-history:/home/dev/.shell_history
     ports: ["8000:8000"]
 
 volumes:
   uv-cache:
+  pre-commit-cache:
   shell-history:
 ```
 

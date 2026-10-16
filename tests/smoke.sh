@@ -40,6 +40,7 @@ expect "passwordless sudo"            sudo -n true
 expect "/workspace writable"          test -w /workspace
 expect "\$HOME/.ssh is mode 700"      test "$(stat -c %a "$HOME/.ssh")" = 700
 expect "\$HOME/.cache/uv owned by dev"      test -O "$HOME/.cache/uv"
+expect "\$HOME/.cache/pre-commit owned by dev" test -O "$HOME/.cache/pre-commit"
 expect "\$HOME/.shell_history owned by dev" test -O "$HOME/.shell_history"
 expect "everything in \$HOME owned by dev"  test -z "$(find "$HOME" ! -user dev -print -quit)"
 
