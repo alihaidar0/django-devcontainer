@@ -15,7 +15,7 @@
 # ============================================================
 
 # Git hooks — installed by the template's post-create step
-pre-commit==4.6.2
+pre-commit==4.7.0
 
 # Worker auto-reload — used by django-template's celery service
 watchfiles==1.3.0
