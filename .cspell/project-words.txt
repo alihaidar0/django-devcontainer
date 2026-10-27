@@ -13,6 +13,8 @@ timonwong
 
 # Tools, services, standards (incl. VS Code marketplace publishers)
 APFS
+chainctl
+chainguard
 davidanson
 direnv
 endoflife
