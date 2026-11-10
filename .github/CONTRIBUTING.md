@@ -186,8 +186,8 @@ Every commit is tested **once**; merging into `main` only publishes.
 | Push to `develop` (a merged PR) | `Detect image changes` (develop vs `main`) → `Test (amd64)` + `Test (arm64)` **only if** `docker/`, `scripts/`, `tests/`, `.dockerignore`, or the workflow differ → `Image tests` |
 | PR into `develop` (topic branch or Dependabot) | Same, based on the PR's files — so a change is tested before you merge it; `Lint` also checks the PR title |
 | Merge `develop` → `main` | `Test` (amd64 + arm64, again) → **Reserve image tag** → **Publish** → **Scan** + **Release**, only if the image inputs changed. The release PR itself reuses develop's green `Image tests`; the image is rebuilt and tested at publish time because every build runs `apt-get upgrade` |
-| Weekly — Monday 05:00 UTC (runs on `develop`, the default branch) | `Rebuild needed?` → only if apt has upgrades or Starship has a newer release: `Start the rebuild on main` dispatches **Docker** on `main`, which runs Test → Reserve image tag → Publish → Scan. Nothing new: nothing starts and the run is green. A Release only if it is the first image of a new Python version |
-| Manual dispatch (`main`) | Test → Reserve image tag → Publish (toggle `push`; `no_cache` for a clean rebuild) → Scan (+ Release for a new Python version) |
+| Weekly — Monday 04:23 UTC (runs on `develop`, the default branch) | `Rebuild needed?` → only if apt has upgrades or Starship has a newer release: `Start the rebuild on main` dispatches **Docker** on `main`, which runs Test → Reserve image tag → Publish → Scan. Nothing new: nothing starts and the run is green. A Release only if it is the first image of a new Python version |
+| Manual dispatch (`main`) | Test → Reserve image tag → Publish (toggle `push`) → Scan (+ Release for a new Python version) |
 
 - **Rebuild needed?** ([`scripts/check-rebuild.sh`](scripts/check-rebuild.sh),
   tested on every `Lint` run by
@@ -203,13 +203,28 @@ Every commit is tested **once**; merging into `main` only publishes.
   `apt-get upgrade`: the base image is pinned by digest, so without it a rebuild
   would leave every base package at that day's version (hadolint's `DL3005` is
   ignored in [`.hadolint.yaml`](../.hadolint.yaml) for that reason).
+- **Report a failed unattended run**: the weekly run and the run it dispatches
+  on `main` are started by `github-actions[bot]`, so GitHub's failure
+  notification reaches nobody. When one of them (or a manual dispatch) fails,
+  this job opens the issue *Unattended Docker run failed* (label `bug`), or
+  comments on it if it is already open. Close it once a run is green again.
 - **Vulnerability gate** (last step of `Test (amd64)`): Trivy fails the job on a
   CRITICAL finding that already has a fix, which fails the required
   `Image tests` check before anything is published. Accepted findings are
   `vex.openvex.json` and `trivy-ignore.rego`, each with its reason. The scan
-  after publishing stays informational.
+  after publishing stays informational. **When it fails:** read the package and
+  its fixed version in the job log and re-run the job once (every build is fresh,
+  so a fix published since is picked up). A package from apt (Debian, GitHub CLI,
+  PGDG) whose fix is not on the mirrors yet clears on a later run; a pinned tool
+  (uv, pre-commit, watchfiles) or Starship needs a newer version; add a VEX
+  statement only when the vulnerable code cannot run in this image. Never lower
+  the gate (`severity`, `exit-code`) to get a green run.
 - **Test** builds each architecture on its own native runner (`ubuntu-26.04`,
-  `ubuntu-26.04-arm`) and runs the smoke test inside the image.
+  `ubuntu-26.04-arm`) and runs the smoke test inside the image. Neither the test
+  build nor the publish build uses the layer cache: a cached layer skips
+  `apt-get upgrade` and keeps the Debian packages of the day the cache was
+  written, which is how the weekly rebuild once published stale packages and
+  then failed the gate on a fix Debian already shipped.
 - On `develop`, change detection compares against **`main`**, so every develop
   commit that carries unreleased image changes is tested — a later docs-only
   push can't hide an earlier failing image change.
@@ -266,7 +281,8 @@ Runs on every PR into `main` and fails unless the head is this repository's
 ### [`workflows/lint.yml`](workflows/lint.yml) — required check `Lint` (develop pushes + PRs into develop)
 
 hadolint ([`.hadolint.yaml`](../.hadolint.yaml)) · ShellCheck (`scripts/`,
-`tests/`, `.github/scripts/`) · actionlint ([`actionlint.yaml`](actionlint.yaml)) ·
+`tests/`, `.github/scripts/`) · actionlint ([`actionlint.yaml`](actionlint.yaml);
+its version is pinned in `lint.yml`, so a new release can't fail Lint unannounced) ·
 format (LF line endings, no trailing whitespace, final newline — a CRLF
 `shell_setup.sh` breaks the image) · README sync · cspell
 ([`cspell.json`](../cspell.json)) over every tracked file, dotfiles included ·
@@ -297,7 +313,7 @@ The VS Code *Code Spell Checker* extension (recommended in
 | [`dockerhub-description.yml`](workflows/dockerhub-description.yml) | Syncs `README.md` + repo description to Docker Hub on merge to `main` (no PR trigger — unmerged docs never publish) |
 | [`labels.yml`](workflows/labels.yml) | Syncs [`labels.yml`](labels.yml) when it changes on `develop`; PRs get a dry run; labels not in the file are kept |
 | [`pr-labels.yml`](workflows/pr-labels.yml) | Adds labels to a PR from its Conventional Commit title (`feat` → `enhancement`, `fix` → `bug`, `docs` → `documentation`, `ci` → `ci`, other types → `chore`, scope `deps` / `docker`, `!` → `breaking change`, `develop` → `main` → `release`). It only adds, never removes, and skips Dependabot (which labels itself) |
-| [`dependency-drift.yml`](workflows/dependency-drift.yml) | Mondays 06:00 UTC: one issue for the PostgreSQL major, the Debian release and the Python minor that are behind upstream (Python is compared with what **Django supports**, not with the newest Python); closes itself when current |
+| [`dependency-drift.yml`](workflows/dependency-drift.yml) | Mondays 05:47 UTC: one issue for the PostgreSQL major, the Debian release and the Python minor that are behind upstream (Python is compared with what **Django supports**, not with the newest Python); closes itself when current |
 
 Required secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (Docker Hub personal
 access token, **Read, Write & Delete** — the description sync needs Delete). `GITHUB_TOKEN` is automatic.
@@ -347,6 +363,10 @@ Weekly (Monday 09:00 UTC), PRs against **`develop`**, **7-day cooldown**:
 - **Security updates:** the *Dependabot security updates* setting is on —
   GitHub opens those PRs against the default branch, which is `develop`, so
   `Image tests` checks them before release like every other update.
+- **The uv image gets no cooldown:** `ghcr.io` gives Dependabot no publication
+  date, so its uv PRs say "Cooldown could not be applied" and can propose a
+  release that is a day old. Read the release date in the PR and merge it only
+  once the release is 7 days old.
 - `tests/smoke.sh` verifies every pin in `requirements-tools.txt` is exactly
   what's installed, so a tool PR can't silently resolve to another version.
 - Every label Dependabot applies must exist in [`labels.yml`](labels.yml). The file
@@ -358,8 +378,9 @@ Weekly (Monday 09:00 UTC), PRs against **`develop`**, **7-day cooldown**:
   check keeps them current: it rebuilds when apt has upgrades or Starship has a
   newer release.
 - The versions Dependabot cannot read at all — the PostgreSQL major
-  (`PG_MAJOR`), the Debian release in the python image tag and the Python
-  minor — are compared with the newest stable releases every Monday by
+  (`PG_MAJOR`), the Debian release in the python image tag, the Python
+  minor and the actionlint version pinned in `lint.yml` — are compared with
+  the newest stable releases every Monday by
   [`workflows/dependency-drift.yml`](workflows/dependency-drift.yml), which keeps
   one issue (label `dependencies`) up to date and closes it when nothing is
   behind.

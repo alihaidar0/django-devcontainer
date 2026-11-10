@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Report versions pinned in docker/Dockerfile.dev that are behind upstream.
+"""Report pinned versions that are behind upstream.
 
 Run by .github/workflows/dependency-drift.yml. Stdlib only.
 
 Dependabot already tracks the literal FROM lines (the python and uv images), the
 pip pins in docker/requirements-tools.txt and the GitHub Actions. What it cannot
-see, and this script compares with the official release data on endoflife.date:
+see, and this script compares with the official release data on endoflife.date
+(and, for actionlint, with its newest GitHub release):
 
   PG_MAJOR          the PostgreSQL client major vs the newest released PostgreSQL
   Debian codename   the Debian in the python image tag vs the newest stable Debian
@@ -15,14 +16,18 @@ see, and this script compares with the official release data on endoflife.date:
                     follows Django, so Python 3.15 is not drift while Django does
                     not list it. Dependabot only proposes Python patch bumps (see
                     its ignore rule), so this row is what announces a new minor.
+  actionlint        the version pinned in .github/workflows/lint.yml vs the newest
+                    actionlint release (the action would otherwise run the newest
+                    one, so Lint could fail on a day nothing in the repository changed)
 
 Starship is not pinned (it is installed from its latest release); the weekly
 rebuild check (scripts/check-rebuild.sh) compares it with the newest release.
 
 Usage: check_drift.py REPORT_FILE
 Writes a Markdown report to REPORT_FILE and "drift=true|false" to $GITHUB_OUTPUT.
-Always exits 0 unless the Dockerfile cannot be parsed; a source that cannot be
-reached is reported as "unknown" and never counts as drift.
+Always exits 0 unless the Dockerfile or the actionlint pin cannot be parsed; a
+source that cannot be reached is reported as "unknown" and never counts as drift.
+GITHUB_TOKEN, when set, is sent to api.github.com (higher rate limit).
 """
 import datetime
 import json
@@ -33,13 +38,26 @@ import urllib.error
 import urllib.request
 
 DOCKERFILE = "docker/Dockerfile.dev"
+LINT_WORKFLOW = ".github/workflows/lint.yml"
+# The `version:` input of the actionlint step (comment lines may sit in between).
+ACTIONLINT_PIN = r"uses: raven-actions/actionlint@[^\n]*\n(?:[ \t]+(?:#[^\n]*|with:)\n)*[ \t]+version: (\d+\.\d+\.\d+)"
 TIMEOUT = 30
 
 
 def fetch_json(url):
-    request = urllib.request.Request(url, headers={"User-Agent": "dependency-drift"})
+    headers = {"User-Agent": "dependency-drift"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token and url.startswith("https://api.github.com/"):
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
         return json.load(response)
+
+
+def newest_github_release(repo):
+    """Version of the newest GitHub release of repo (drafts and pre-releases excluded)."""
+    tag = fetch_json(f"https://api.github.com/repos/{repo}/releases/latest")["tag_name"]
+    return tag[1:] if tag.startswith("v") else tag
 
 
 def newest_released(product):
@@ -73,12 +91,21 @@ def pinned(text):
     return pg.group(1), base.group(1), base.group(2)
 
 
+def pinned_actionlint(text):
+    match = re.search(ACTIONLINT_PIN, text)
+    if not match:
+        sys.exit(f"Could not read the actionlint version pinned in {LINT_WORKFLOW}")
+    return match.group(1)
+
+
 def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     report_path = sys.argv[1]
     with open(DOCKERFILE, encoding="utf-8") as handle:
         pg_major, py_minor, debian = pinned(handle.read())
+    with open(LINT_WORKFLOW, encoding="utf-8") as handle:
+        actionlint = pinned_actionlint(handle.read())
 
     rows = []  # (component, pinned, newest, status)
     notes = []
@@ -148,10 +175,22 @@ def main():
     except (urllib.error.URLError, OSError, ValueError, KeyError, json.JSONDecodeError) as error:
         rows.append(("Python minor (newest Django supports)", py_minor, "unknown", f"could not check ({type(error).__name__})"))
 
+    record(
+        "actionlint (Lint)",
+        actionlint,
+        lambda: newest_github_release("rhysd/actionlint"),
+        lambda newest: (
+            f"actionlint {newest} is released. Bump `version:` in {LINT_WORKFLOW} in a PR and let Lint run: a new "
+            "release can add checks that fail on unchanged workflows. Remove the runner labels from "
+            ".github/actionlint.yaml once actionlint knows them."
+        ),
+    )
+
     drift = any(status in ("behind", "ahead") for *_, status in rows)
 
     lines = [
-        "Versions pinned in `docker/Dockerfile.dev` compared with the newest stable releases (endoflife.date).",
+        f"Versions pinned in `{DOCKERFILE}` and `{LINT_WORKFLOW}` compared with the newest stable releases "
+        "(endoflife.date, PyPI, GitHub).",
         "",
         "| Component | Pinned | Newest stable (or supported) | Status |",
         "| --- | --- | --- | --- |",
@@ -161,7 +200,7 @@ def main():
         lines += ["", *[f"- {note}" for note in notes]]
     lines += [
         "",
-        "Dependabot covers the python (patch updates only) and uv `FROM` lines, `docker/requirements-tools.txt` and the GitHub Actions; Starship floats and is checked by the weekly rebuild.",
+        "Dependabot covers the python (patch updates only) and uv `FROM` lines, `docker/requirements-tools.txt` and the GitHub Actions; Starship floats and is checked by the weekly rebuild; the actionlint version Lint runs is compared here.",
         "",
         "This report is kept by the `dependency-drift` workflow: it opens one issue while something is behind and closes it once nothing is.",
     ]

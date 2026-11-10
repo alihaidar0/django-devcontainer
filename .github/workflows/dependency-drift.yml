@@ -2,7 +2,8 @@
 #  .github/workflows/dependency-drift.yml
 #
 #  Watches what Dependabot cannot see: the PostgreSQL client major, the Debian
-#  release in the python image tag, and the Python minor. Every Monday it
+#  release in the python image tag, the Python minor, and the actionlint version
+#  pinned in lint.yml. Every Monday it
 #  compares them with the newest stable releases (Python: with the newest minor
 #  that Django declares support for, because the image follows Django) and
 #  keeps ONE issue (label
@@ -19,7 +20,8 @@ name: Dependency drift
 
 on:
   schedule:
-    - cron: "0 6 * * 1"
+    # Off the top of the hour, when GitHub delays or drops scheduled runs.
+    - cron: "47 5 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -44,6 +46,7 @@ jobs:
           sparse-checkout: |
             docker/Dockerfile.dev
             .github/scripts
+            .github/workflows/lint.yml
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
@@ -51,6 +54,8 @@ jobs:
         id: check
         env:
           REPORT: ${{ runner.temp }}/drift-report.md
+          # Read-only use: the actionlint release lookup on api.github.com.
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/check_drift.py "$REPORT"
 
       - name: Add report to job summary
