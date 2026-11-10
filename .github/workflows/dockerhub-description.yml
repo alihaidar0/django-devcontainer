@@ -15,8 +15,13 @@
 #    - No PR trigger: an unmerged README must never reach Docker Hub
 #
 #  Required GitHub Secrets:
-#    DOCKERHUB_USERNAME   Docker Hub username
-#    DOCKERHUB_TOKEN      Docker Hub access token (Read, Write & Delete)
+#    DOCKERHUB_USERNAME            Docker Hub username
+#    DOCKERHUB_DESCRIPTION_TOKEN   Docker Hub access token (Read, Write & Delete),
+#                                  used only here: updating the description needs
+#                                  Delete. Publishing uses a separate token
+#                                  (DOCKERHUB_TOKEN, Read & Write) in docker.yml, so
+#                                  a leaked publishing token cannot delete tags or
+#                                  the repository.
 # ============================================================
 
 name: Docker Hub description
@@ -70,7 +75,7 @@ jobs:
         uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          password: ${{ secrets.DOCKERHUB_DESCRIPTION_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/django-devcontainer
           readme-filepath: ./README.md
           # Single source of truth: the GitHub repo "About" description (≤100 chars on Docker Hub).

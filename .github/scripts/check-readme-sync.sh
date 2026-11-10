@@ -11,7 +11,8 @@
 #      README (a few are matched by their command name: ping, dig, nc, …),
 #    * the README is larger than 24 000 bytes (Docker Hub truncates at 25 000),
 #    * the Python minor, the PostgreSQL major or the Debian codename in
-#      docker/Dockerfile.dev is not what the README says,
+#      docker/Dockerfile.dev, or the Starship version in scripts/shell_setup.sh,
+#      is not what the README says,
 #    * the formats django-template parses (ARG PG_MAJOR, the python and uv FROM
 #      lines, the eight aliases it uses) drifted, or the README stopped
 #      documenting them,
@@ -136,6 +137,15 @@ if [ -z "${debian}" ]; then
 else
   grep -qF -- "slim-${debian}" "${readme}" \
     || fail "README does not name the Debian base 'slim-${debian}'."
+fi
+
+# ── Starship pin ─────────────────────────────────────────────
+starship_pin="$(grep -oE '^starship_version="[0-9]+\.[0-9]+\.[0-9]+"' "${aliases_script}" | head -1 | cut -d'"' -f2 || true)"
+if [ -z "${starship_pin}" ]; then
+  fail "Could not read starship_version from ${aliases_script}."
+else
+  grep -qF -- "**Starship:** pinned to ${starship_pin}" "${readme}" \
+    || fail "README does not say '**Starship:** pinned to ${starship_pin}' (the version pinned in ${aliases_script})."
 fi
 
 # ── Contract parsed by django-template ───────────────────────
