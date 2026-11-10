@@ -180,10 +180,10 @@ can expire outside this pipeline.
 project must keep building on a known image — bump it deliberately.
 
 **Every Monday** a check compares the published `latest` with what is available
-now: any Debian, GitHub CLI or PostgreSQL package upgrade, or a newer Starship.
-Only then is the image rebuilt, so `latest` always carries current security fixes
-and a quiet week publishes nothing. Each rebuild is the next revision of the
-current Python.
+now: any Debian, GitHub CLI or PostgreSQL package upgrade. Only then is the image
+rebuilt, so `latest` always carries current security fixes and a quiet week
+publishes nothing. Each rebuild is the next revision of the current Python.
+`latest` is also scanned for fixable critical vulnerabilities every Monday.
 Platforms: `linux/amd64` (Windows, Linux, cloud) and `linux/arm64` (Apple
 Silicon) — Docker pulls the right one automatically.
 
@@ -230,8 +230,9 @@ Dependabot PR ────┤       cspell · markdownlint)
 PR develop → main ─▶ PR source + the Lint / Image tests results of develop's
                      head commit (required)
 Merge to main ────▶ Test (again) ─▶ Reserve tag ─▶ Publish ─▶ Scan + Release
-Weekly (Mon 04:23) ▶ Rebuild needed? ─(apt or Starship changed)─▶ Test ─▶ Reserve tag
+Weekly (Mon 04:23) ▶ Rebuild needed? ─(apt has upgrades)─▶ Test ─▶ Reserve tag
                      ─▶ Publish ─▶ Scan      (nothing changed: all skipped)
+                   ▶ Trivy scan of the published latest (an issue opens on failure)
 Weekly (Mon 05:47) ▶ Dependency drift: one issue for what Dependabot can't see
 Manual dispatch ──▶ Test ─▶ Reserve tag ─▶ Publish ─▶ Scan
                             │              │          └─ Trivy → Security tab
@@ -254,10 +255,11 @@ Manual dispatch ──▶ Test ─▶ Reserve tag ─▶ Publish ─▶ Scan
   branch and reaches `develop` through a PR merged with a merge commit (the PR
   title is the release note); `main` accepts PRs from `develop` only, and every merge into
   `main` is a release.
-- **Pinned supply chain:** every action and the base/uv images are pinned by
-  commit SHA, digest, or exact version; Dependabot checks **everything** —
-  actions, the Python and uv images, and the global CLI pins — weekly, after a
-  7-day cooldown.
+- **Pinned supply chain:** every action, the base/uv images, Starship (with its
+  checksums) and the Dockerfile frontend are pinned by commit SHA, digest, or
+  exact version; Dependabot checks actions, the Python and uv images, and the
+  global CLI pins weekly, after a 7-day cooldown, and a weekly issue reports the
+  other pins that fall behind.
 
 Details: [`.github/CONTRIBUTING.md`](https://github.com/alihaidar0/django-devcontainer/blob/main/.github/CONTRIBUTING.md).
 
@@ -271,10 +273,10 @@ django-devcontainer/
 │   ├── ISSUE_TEMPLATE/              # Bug + feature forms (blank issues disabled)
 │   ├── workflows/
 │   │   ├── docker.yml               # Rebuild check → test → reserve tag → publish → scan → release
-│   │   ├── dependency-drift.yml     # Weekly issue: PostgreSQL major, Debian, Python minor, actionlint
+│   │   ├── dependency-drift.yml     # Weekly issue: PostgreSQL, Debian, Python minor, actionlint, zizmor, Starship
 │   │   ├── release.yml              # Reusable: GitHub Release named after the image tag
 │   │   ├── branch-policy.yml        # PR source: only develop may open PRs into main
-│   │   ├── lint.yml                 # hadolint · ShellCheck · actionlint · format · README sync · cspell · markdownlint
+│   │   ├── lint.yml                 # hadolint · ShellCheck · actionlint · zizmor · format · README sync · cspell · markdownlint
 │   │   ├── dockerhub-description.yml# README.md → Docker Hub
 │   │   ├── labels.yml               # labels.yml → GitHub labels
 │   │   └── pr-labels.yml            # Labels a PR from its Conventional Commit title
@@ -348,9 +350,10 @@ newest at build time.
 **uv:** a Dependabot PR bumps the pinned image (tag and digest). uv is pre-1.0, so
 read the PR's release notes before merging a minor version.
 
-**Starship:** nothing is pinned. Each build downloads the newest release and
-checks it against the SHA-256 published with it; the weekly check rebuilds when a
-newer release exists.
+**Starship:** pinned to 1.27.0, with the SHA-256 of each architecture's archive
+kept in `scripts/shell_setup.sh` (not the one published with the release). The
+weekly drift issue reports a release that is at least 7 days old; bump the
+version and both checksums in one PR.
 
 **A global Python CLI:** add `name==version` to `docker/requirements-tools.txt`
 and a matching `uv tool install -c "$c" <name>` line in `Dockerfile.dev`. Only

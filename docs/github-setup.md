@@ -59,7 +59,7 @@ The rules, in one place:
 1. **No direct push to `main`.** `main` accepts pull requests from `develop` only, merged with a **merge commit** (a squash or rebase would give `main` commits that `develop` lacks, and the next release would conflict). Every pull request in this repository, on either branch, is merged with a merge commit: never squash, never rebase.
 2. **No direct push to `develop` either.** `develop` accepts pull requests from any topic branch and from Dependabot, merged with a merge commit once `Lint` and `Image tests` are green and the branch is up to date with `develop` (the merge commit is named after the PR title, so the title must be a Conventional Commit; `Lint` checks it). Each merge is a push to `develop` that runs `Lint` and `Image tests` again; the `develop` → `main` pull request reuses those results, because status checks attach to the commit.
 3. **You release by merging `develop` into `main` by hand, after your monthly review of the Dependabot pull requests.** An image is published only when that merge changes an image file (`docker/**`, `scripts/**`, `tests/**`, `.dockerignore`, `docker.yml`), when the weekly check finds something stale, or when you run the Docker workflow by hand on `main`. A new Python version (the `FROM python:` line) is built as a new image `python-X.Y.Z.1`; a tools-only or system-package update is the next revision of the same Python and moves `latest` and `python-X.Y` to it, while the old revision stays available.
-4. **The weekly run builds only when something changed.** Monday 04:23 UTC it simulates `apt-get upgrade` inside the published `latest` and compares the installed Starship with the newest release. Scheduled workflows run from the default branch (`develop`), which never publishes, so when the check finds something it dispatches the Docker workflow on `main`, and that run is an ordinary manual publish. Nothing new: nothing is dispatched and the run finishes green.
+4. **The weekly run builds only when something changed.** Monday 04:23 UTC it simulates `apt-get upgrade` inside the published `latest`. Scheduled workflows run from the default branch (`develop`), which never publishes, so when the check finds something it dispatches the Docker workflow on `main`, and that run is an ordinary manual publish. Nothing new: nothing is dispatched and the run finishes green. The same run scans the published `latest` with Trivy (fixable CRITICAL findings only) and opens the issue *Unattended Docker run failed* when that scan fails.
 
 Pull requests into `main` from any branch other than `develop` fail the required **PR source** check: GitHub rulesets cannot restrict a pull request's source branch, so `branch-policy.yml` enforces it.
 
@@ -88,11 +88,13 @@ Pull requests into `main` from any branch other than `develop` fail the required
 
 The image repository is created and configured by hand; the workflows only push to it and sync its README.
 
-1. **Start clean (only when a repository with old images already exists).** Docker Hub → **Repositories** → `django-devcontainer` → **Settings** → **Delete repository** → type the repository name → confirm. This removes every tag, the description and the categories, and every project pulling `latest` breaks until the first publish finishes, so do it right before the release. To keep the description and categories, open the **Tags** tab instead, select all tags and delete them. Also delete the old access token (Account settings → **Personal access tokens**) and create a new one in step 4.
+1. **Start clean (only when a repository with old images already exists).** Docker Hub → **Repositories** → `django-devcontainer` → **Settings** → **Delete repository** → type the repository name → confirm. This removes every tag, the description and the categories, and every project pulling `latest` breaks until the first publish finishes, so do it right before the release. To keep the description and categories, open the **Tags** tab instead, select all tags and delete them. Also delete the old access tokens (Account settings → **Personal access tokens**) and create new ones in step 5.
 2. **Create the repository.** Docker Hub → **Repositories** → **Create repository**: namespace `alihaidar199527`, name `django-devcontainer`, visibility **Public**. Create it before the first publish; the README sync only runs once it exists.
 3. **Short description:** the same text as the GitHub description (100 bytes at most; the sync workflow overwrites it from there).
 4. **Categories:** `Developer tools` and `Languages & frameworks`.
-5. **Access token.** Docker Hub → Account settings → **Personal access tokens** → **Generate new token**, permission **Read, Write & Delete** (the description sync needs Delete). Copy it once; it goes into the repository secrets in section 5. Note the expiry date and renew the token before then.
+5. **Access tokens: two, one per job.** Docker Hub → Account settings → **Personal access tokens** → **Generate new token**, twice. Copy each once; they go into the repository secrets in section 5. Note the expiry dates and renew the tokens before then.
+   - **Publishing token**, permission **Read & Write**: pushes the image from `docker.yml`. It cannot delete tags or the repository, so a leaked copy can push images but not remove existing ones.
+   - **Description token**, permission **Read, Write & Delete** (updating the description needs Delete): used only by `dockerhub-description.yml`, which runs on `main` after a README change and never builds anything.
 6. **Never enable tag retention or inactive-image clean-up** for this repository. Old `python-X.Y.Z.R` tags are restore points and must not expire outside the pipeline. Never delete or move a `python-X.Y.Z.R` tag by hand either.
 7. **The README is synced by the pipeline.** The **Docker Hub description** workflow copies `README.md` and the GitHub description to the repository on every README change merged to `main`. After creating a new repository, run it once by hand (Actions → **Docker Hub description** → **Run workflow**, branch `main`).
 
@@ -200,14 +202,15 @@ There is no environment on purpose: the publish is a call to a reusable workflow
 
 ### 5.2 Secrets and variables
 
-Settings → **Secrets and variables → Actions**, the **Secrets** tab → **New repository secret**, twice:
+Settings → **Secrets and variables → Actions**, the **Secrets** tab → **New repository secret**, three times:
 
 | Name | Value |
 | --- | --- |
 | `DOCKERHUB_USERNAME` | `alihaidar199527` |
-| `DOCKERHUB_TOKEN` | The access token from section 2 |
+| `DOCKERHUB_TOKEN` | The publishing token (Read & Write) from section 2 |
+| `DOCKERHUB_DESCRIPTION_TOKEN` | The description token (Read, Write & Delete) from section 2 |
 
-Delete any other secret. Leave the **Variables** tab empty, and leave the **Dependabot** and **Codespaces** secret tabs empty: the checks that run on Dependabot pull requests need no secrets. With the GitHub CLI: `gh secret set DOCKERHUB_USERNAME -R alihaidar0/django-devcontainer` and `gh secret set DOCKERHUB_TOKEN -R alihaidar0/django-devcontainer` (each prompts for the value).
+Delete any other secret. Leave the **Variables** tab empty, and leave the **Dependabot** and **Codespaces** secret tabs empty: the checks that run on Dependabot pull requests need no secrets. With the GitHub CLI: `gh secret set DOCKERHUB_USERNAME -R alihaidar0/django-devcontainer`, `gh secret set DOCKERHUB_TOKEN -R alihaidar0/django-devcontainer` and `gh secret set DOCKERHUB_DESCRIPTION_TOKEN -R alihaidar0/django-devcontainer` (each prompts for the value).
 
 ## 6. Settings → Advanced Security (Code security)
 
@@ -328,7 +331,7 @@ gh api repos/$R/code-scanning/default-setup
 | Actions permissions | `enabled` is `true` and `allowed_actions` is `selected`; the selected list matches section 4.1 |
 | Workflow token | `default_workflow_permissions` is `read` and `can_approve_pull_request_reviews` is `false` |
 | Environments | `0` |
-| Secrets | `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` only |
+| Secrets | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` and `DOCKERHUB_DESCRIPTION_TOKEN` only |
 | Advanced Security | secret scanning and push protection `enabled`; the vulnerability-alerts call answers `HTTP/2 204`; automated security fixes `enabled`; private vulnerability reporting `enabled`; the CodeQL default setup state is `configured` with the language `actions` |
 
 ### 10.B Check that the rules block what they should
@@ -416,8 +419,8 @@ Release: open a pull request `develop` → `main` and merge it with a merge comm
 
 **Monday routine** (all UTC, nothing to do unless something opens; GitHub can start a scheduled run late):
 
-- **04:23, Docker:** the weekly rebuild check. It builds only when apt has upgrades or Starship has a newer release, and the job summary lists the reasons. A quiet week ends green with everything else skipped. If the check or the build it starts fails, the issue *Unattended Docker run failed* opens.
-- **05:47, Dependency drift:** keeps one issue up to date for what Dependabot cannot see (the PostgreSQL major, the Debian release, and the Python minor measured against what Django supports), and closes it when everything is current.
+- **04:23, Docker:** the weekly rebuild check. It builds only when apt has upgrades, and the job summary lists the reasons. A quiet week ends green with everything else skipped. In parallel, `Scan the published image` runs Trivy on `latest` (fixable CRITICAL findings, accepted findings excluded) and puts the result in its job summary. If the check, the build it starts or the scan fails, the issue *Unattended Docker run failed* opens.
+- **05:47, Dependency drift:** keeps one issue up to date for what Dependabot cannot see (the PostgreSQL major, the Debian release, the Python minor measured against what Django supports, the actionlint and zizmor versions in `lint.yml`, the Starship version in `shell_setup.sh` and the Dockerfile syntax frontend), and closes it when everything is current.
 - **09:00, Dependabot:** pull requests into `develop` for the Actions, the python and uv images, and the tool pins.
 
 ## 12. Maintenance and recovery
@@ -446,7 +449,9 @@ The next publish moves them forward again, so fix the cause on `develop` and rel
 
 **A weekly run that skips.** That is normal: the job summary of **Rebuild needed?** says nothing changed. To force a build, run **Docker** by hand on `main`.
 
-**Expired Docker Hub token.** Publishing fails with `denied: requested access to the resource is denied`. Create a new token (section 2), update `DOCKERHUB_TOKEN` and re-run the failed jobs.
+**A failed weekly scan.** The issue *Unattended Docker run failed* links the run; the job summary of `Scan the published image` names the package and its fixed version. If the weekly rebuild of the same run published a new image, the finding is probably fixed: re-run the scan job, or wait for next Monday, then close the issue. Otherwise treat it like a failed vulnerability gate (section 13, item 1): a new apt package arrives with the next rebuild, a pinned tool or Starship needs a version bump, and a `not_affected` statement is only for code that cannot run in this image.
+
+**Expired Docker Hub token.** Publishing fails with `denied: requested access to the resource is denied`. Create a new publishing token (section 2), update `DOCKERHUB_TOKEN` and re-run the failed jobs. If the README sync fails the same way, do it for `DOCKERHUB_DESCRIPTION_TOKEN`.
 
 **Starting over on Docker Hub (wipe every image).** Only if you accept that every project pinned to an existing tag breaks until the next publish:
 
@@ -468,7 +473,7 @@ Some things can only be confirmed by a real run. Go through them once, after the
    **Known open findings.** Four HIGH alerts on `usr/bin/gh` (Go standard library and `golang.org/x/net`: HTTP/2 SETTINGS frames, HTTP Range headers, crypto/tls ECH). They come from the Go version the GitHub CLI release was built with, and `gh` 2.102.0 is the newest release, so there is nothing to update yet. They close by themselves when a newer `gh` is built with a fixed Go: the weekly rebuild check notices the new apt package, rebuilds on `main`, and the next scan closes them. Do not add a VEX statement for them: they are real findings, only not fixable here.
 3. **Dependabot respects the Python rule.** After the first Monday, the Dependabot pull requests must contain no Python 3.15 (or newer minor) update, only patch updates. If a 3.15 pull request appears, the `ignore` rule in `.github/dependabot.yml` did not match: close it with the comment `@dependabot ignore this minor version` and tell whoever maintains the repository.
 4. **The weekly run behaves.** The Docker run of the first Monday (04:23 UTC, on `develop`) shows `Rebuild needed?` with a summary. If it found something, a `Start the rebuild on main` job appears and a new Docker run on `main` starts with the event `workflow_dispatch`.
-5. **The drift issue is quiet.** **Dependency drift** (05:47 UTC) should not open an issue while Python, PostgreSQL and Debian are current. It reports Python 3.15 as informational only.
+5. **The drift issue is quiet.** **Dependency drift** (05:47 UTC) should not open an issue while Python, PostgreSQL, Debian, actionlint, zizmor, Starship and the Dockerfile syntax frontend are current. A Starship release younger than 7 days is only noted. It reports Python 3.15 as informational only.
 6. **The first release reads well.** The release `python-X.Y.Z.1` lists the pull request titles since the previous release, grouped by type, without the `develop` → `main` merge itself.
 7. **Pinning is enforced.** Settings → Actions → General → **Require actions to be pinned to a full-length commit SHA** (section 4) is ticked. If a later run fails because a called workflow uses an unpinned action, the message names it: untick the box until that workflow is updated.
 8. **Sibling repository and notes.** `django-template` documents the tags `latest`, `python-3.14` and `python-X.Y.Z.R`, adds `flower` to its dependency list for its Flower command, and states the Django 6.x minimum (it uses Django 6's CSP middleware). Project notes that describe this image are updated to match.
@@ -482,13 +487,13 @@ A one-page list to tick off after a recovery. Each line points to the section wi
 | ☐ | GitHub | Repository public, `main` and `develop` pushed | 1 |
 | ☐ | GitHub | About: description (100 bytes at most), website, topics | 1 |
 | ☐ | Docker Hub | Repository public, categories, no tag retention | 2 |
-| ☐ | Docker Hub | Access token (Read, Write & Delete) | 2 |
+| ☐ | Docker Hub | Two access tokens: publishing (Read & Write) and description (Read, Write & Delete) | 2 |
 | ☐ | GitHub | General: default branch `develop`; merge commits only (squash and rebase off); auto-delete head branches; release immutability | 3.1 |
 | ☐ | GitHub | Collaborators, classic branch rules, webhooks, deploy keys, Pages, Codespaces: empty or off | 3.2 |
 | ☐ | GitHub | Actions: selected-actions policy and allow-list, fork approvals, read-only workflow token, no PR approval, 30-day retention | 4.1 |
 | ☐ | GitHub | Actions: caches cleared after a reset, no variables | 4.2 |
 | ☐ | GitHub | Environments: none | 5.1 |
-| ☐ | GitHub | Secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` only | 5.2 |
+| ☐ | GitHub | Secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` and `DOCKERHUB_DESCRIPTION_TOKEN` only | 5.2 |
 | ☐ | GitHub | Advanced Security: private vulnerability reporting, dependency graph, Dependabot alerts, malware alerts and security updates, CodeQL (Actions), secret scanning, push protection | 6 |
 | ☐ | GitHub | Labels workflow run once on `develop` | 7 |
 | ☐ | GitHub | First image published, Docker Hub description run once | 9 |

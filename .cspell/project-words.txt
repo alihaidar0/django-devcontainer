@@ -32,6 +32,7 @@ SARIF
 Sigstore
 SLSA
 xgettext
+zizmor
 
 # Debian packages & system
 dnsutils

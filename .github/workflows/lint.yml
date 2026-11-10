@@ -12,6 +12,8 @@
 #    ShellCheck  scripts/*.sh, tests/*.sh, .github/scripts/*.sh (preinstalled on the runner)
 #    actionlint  .github/workflows/* (config: .github/actionlint.yaml; version
 #                pinned below, newer releases reported by dependency-drift.yml)
+#    zizmor      security audit of .github/workflows/* (version pinned below,
+#                newer releases reported by dependency-drift.yml)
 #    script tests .github/scripts/test-reserve-tag.sh, test-check-rebuild.sh and
 #                test-release-notes.sh (stubbed curl, gh and docker), plus a
 #                syntax check of the drift script
@@ -95,6 +97,15 @@ jobs:
           # on a day nothing here changed. dependency-drift.yml reports newer
           # releases in its weekly issue; bump this line in a PR.
           version: 1.7.12
+
+      # Security audit of the workflows (template injection, over-broad permissions,
+      # unpinned actions, credential persistence, ...). Offline: no online audits,
+      # which need a token and only add advisories. pipx is on the runner image.
+      # Pinned like actionlint: a new release can add audits that fail on a day
+      # nothing here changed. dependency-drift.yml reports newer releases; bump
+      # the version in a PR.
+      - name: zizmor
+        run: pipx run zizmor==1.32.0 --offline --min-severity medium .github/workflows
 
       # Mirrors the rules in .editorconfig / .gitattributes that tooling can
       # verify reliably. Markdown is skipped for trailing whitespace (a line

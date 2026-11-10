@@ -2,7 +2,8 @@
 # =============================================================
 #  shell_setup.sh
 #  Runs once at image build time (Dockerfile.dev RUN step, as root).
-#  Installs the Starship prompt and writes a user-agnostic shell
+#  Installs the Starship prompt (pinned version, checked against a
+#  checksum kept in this file) and writes a user-agnostic shell
 #  config that every user of the image (dev, root) picks up:
 #
 #    /etc/starship.toml       prompt config (STARSHIP_CONFIG)
@@ -16,26 +17,32 @@
 set -euo pipefail
 
 # ── Starship prompt ──────────────────────────────────────────
-# The newest release, downloaded as a tarball and checked against the SHA-256
-# that the same release publishes — no remote install script is run. The tag is
-# resolved once, so the tarball and its checksum always belong together. (This
-# catches a corrupted or tampered download; it cannot catch a release that was
-# itself compromised, which is why the weekly rebuild check compares the
-# installed version with the newest release.)
+# Pinned: the version and the SHA-256 of each architecture's tarball live here,
+# in the repository, so a new binary reaches the image only through a reviewed
+# change. The checksums are NOT fetched from the release: a file published next
+# to a tampered tarball would vouch for it. No remote install script is run.
+# To bump: take a release at least 7 days old, download both tarballs, compute
+# their SHA-256 yourself and compare with the digests GitHub shows for the
+# release assets; then change the version and both checksums in one PR. The
+# weekly drift issue (.github/scripts/check_drift.py) says when one is due.
+starship_version="1.27.0"
 case "$(dpkg --print-architecture)" in
-  amd64) starship_target=x86_64-unknown-linux-musl ;;
-  arm64) starship_target=aarch64-unknown-linux-musl ;;
+  amd64)
+    starship_target=x86_64-unknown-linux-musl
+    starship_sha=10c8eb4cb3b761d9bf59ea828444c2dab36c900b7d69a69e08814b286969df89
+    ;;
+  arm64)
+    starship_target=aarch64-unknown-linux-musl
+    starship_sha=341f5cbf24699fa0b27ec88965ad25f862ea09e15d35a543fd6ffdff1d2aa00d
+    ;;
   *) echo "Unsupported architecture for Starship: $(dpkg --print-architecture)" >&2; exit 1 ;;
 esac
 # github.com answers now and then with a 5xx (a 504 failed a build once), and
 # the build runs without a layer cache, so every download is retried.
 fetch=(curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors)
-starship_tag="$("${fetch[@]}" -o /dev/null -w '%{url_effective}' https://github.com/starship/starship/releases/latest)"
-starship_tag="${starship_tag##*/}"
-starship_url="https://github.com/starship/starship/releases/download/${starship_tag}/starship-${starship_target}.tar.gz"
+starship_url="https://github.com/starship/starship/releases/download/v${starship_version}/starship-${starship_target}.tar.gz"
 starship_dir="$(mktemp -d)"
 "${fetch[@]}" -o "${starship_dir}/starship.tar.gz" "${starship_url}"
-starship_sha="$("${fetch[@]}" "${starship_url}.sha256")"
 echo "${starship_sha}  ${starship_dir}/starship.tar.gz" | sha256sum --check --status
 tar -xzf "${starship_dir}/starship.tar.gz" -C /usr/local/bin starship
 chmod 0755 /usr/local/bin/starship

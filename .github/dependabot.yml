@@ -11,8 +11,10 @@
 #                   mypy is pinned by each project, not here
 #
 # Outside Dependabot (no ecosystem exists): Debian/apt packages (gh, PostgreSQL
-# client, …) and the Starship binary. The weekly scheduled rebuild in
-# workflows/docker.yml picks up their latest releases instead.
+# client, …), which the weekly scheduled rebuild in workflows/docker.yml picks up;
+# and the pins in scripts/shell_setup.sh (Starship), workflows/lint.yml (actionlint,
+# zizmor) and line 1 of docker/Dockerfile.dev (the syntax frontend), which the
+# weekly drift issue (workflows/dependency-drift.yml) reports when they are behind.
 #
 # Branch model: every PR targets `develop` (target-branch below); releases
 # reach `main` through the develop → main PR. `develop` is also the repository's
