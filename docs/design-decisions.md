@@ -61,9 +61,9 @@ Why this repository works the way it does. Each entry says what was decided, why
 
 ### 9. `apt-get upgrade` on every build
 
-- **Decision:** the base image is pinned by digest, and the build upgrades every Debian package on top of it. hadolint's rule against `apt-get upgrade` is ignored, with the reason written next to it.
-- **Why:** a digest-pinned base freezes its packages at that day. Without an upgrade, a rebuild would change nothing, and security fixes (OpenSSL, the kernel headers, Redis) would wait for the next base-image bump. The cost is that a rebuild is not bit-for-bit reproducible; every revision is kept for rollback.
-- **Where:** `docker/Dockerfile.dev`, `.hadolint.yaml`.
+- **Decision:** the base image is pinned by digest, and the build upgrades every Debian package on top of it. hadolint's rule against `apt-get upgrade` is ignored, with the reason written next to it. No build uses the layer cache, so the upgrade really runs every time.
+- **Why:** a digest-pinned base freezes its packages at that day. Without an upgrade, a rebuild would change nothing, and security fixes (OpenSSL, the kernel headers, Redis) would wait for the next base-image bump. A cached layer has the same effect: the `RUN` step is not executed, so the image keeps the packages of the day the cache was written (the weekly rebuild once published such an image, and later failed the vulnerability gate on a fix Debian already shipped). The cost is that a rebuild is not bit-for-bit reproducible and takes a minute or two longer; every revision is kept for rollback.
+- **Where:** `docker/Dockerfile.dev`, `.hadolint.yaml`, the `no-cache` and `cache` inputs in `docker.yml`.
 
 ## Supply chain and releases
 
@@ -97,12 +97,13 @@ Why this repository works the way it does. Each entry says what was decided, why
 
 - **Decision:** every Monday a job on `develop` simulates `apt-get upgrade` inside the published `latest` and compares the installed Starship with the newest release. If anything is newer, it starts the normal Docker run on `main`; otherwise nothing happens.
 - **Why:** Debian, the GitHub CLI and PostgreSQL publish fixes continuously, and a monthly release would leave the image stale in between. Scheduled workflows always run from the default branch (`develop`), which never publishes, so the build itself runs on `main` as an ordinary manual publish.
+- **Failures:** these runs are started by the schedule and by `github-actions[bot]`, so GitHub's failure notification reaches nobody. The `report-failure` job keeps one open issue (label `bug`) instead, and each new failure comments on it.
 - **Alternative:** delete the dispatch job and the check only reports; every publish is then a human merge. That is the choice made by repositories that publish only on release.
-- **Where:** `docker.yml` (`rebuild-check`, `dispatch-build`), `.github/scripts/check-rebuild.sh` and its tests.
+- **Where:** `docker.yml` (`rebuild-check`, `dispatch-build`, `report-failure`), `.github/scripts/check-rebuild.sh` and its tests.
 
 ### 15. What Dependabot cannot see is watched by a weekly issue
 
-- **Decision:** `dependency-drift.yml` compares the PostgreSQL major, the Debian release in the python image tag and the Python minor (against what Django supports) with upstream, and keeps one issue up to date; it closes itself when nothing is behind.
+- **Decision:** `dependency-drift.yml` compares the PostgreSQL major, the Debian release in the python image tag, the Python minor (against what Django supports) and the actionlint version pinned in `lint.yml` with upstream, and keeps one issue up to date; it closes itself when nothing is behind.
 - **Why:** those pins are not in a manifest Dependabot reads, or, for Python, Dependabot is deliberately limited to patches.
 - **Where:** `.github/workflows/dependency-drift.yml`, `.github/scripts/check_drift.py`.
 

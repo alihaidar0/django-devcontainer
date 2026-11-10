@@ -230,9 +230,9 @@ Dependabot PR ────┤       cspell · markdownlint)
 PR develop → main ─▶ PR source + the Lint / Image tests results of develop's
                      head commit (required)
 Merge to main ────▶ Test (again) ─▶ Reserve tag ─▶ Publish ─▶ Scan + Release
-Weekly (Mon 05:00) ▶ Rebuild needed? ─(apt or Starship changed)─▶ Test ─▶ Reserve tag
+Weekly (Mon 04:23) ▶ Rebuild needed? ─(apt or Starship changed)─▶ Test ─▶ Reserve tag
                      ─▶ Publish ─▶ Scan      (nothing changed: all skipped)
-Weekly (Mon 06:00) ▶ Dependency drift: one issue for what Dependabot can't see
+Weekly (Mon 05:47) ▶ Dependency drift: one issue for what Dependabot can't see
 Manual dispatch ──▶ Test ─▶ Reserve tag ─▶ Publish ─▶ Scan
                             │              │          └─ Trivy → Security tab
                             │              └─ docker/github-builder: native
@@ -271,7 +271,7 @@ django-devcontainer/
 │   ├── ISSUE_TEMPLATE/              # Bug + feature forms (blank issues disabled)
 │   ├── workflows/
 │   │   ├── docker.yml               # Rebuild check → test → reserve tag → publish → scan → release
-│   │   ├── dependency-drift.yml     # Weekly issue: PostgreSQL major, Debian, Python minor
+│   │   ├── dependency-drift.yml     # Weekly issue: PostgreSQL major, Debian, Python minor, actionlint
 │   │   ├── release.yml              # Reusable: GitHub Release named after the image tag
 │   │   ├── branch-policy.yml        # PR source: only develop may open PRs into main
 │   │   ├── lint.yml                 # hadolint · ShellCheck · actionlint · format · README sync · cspell · markdownlint
@@ -358,7 +358,7 @@ tools useful to *every* project belong here — project dependencies go in the
 project.
 
 **Optionally, before opening the PR**, build and test locally (CI does the same on
-every PR, about 15–25 minutes on a cold cache):
+every PR, without a layer cache, in a few minutes):
 
 ```bash
 docker build -f docker/Dockerfile.dev -t django-devcontainer:test .
