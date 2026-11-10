@@ -27,12 +27,15 @@ case "$(dpkg --print-architecture)" in
   arm64) starship_target=aarch64-unknown-linux-musl ;;
   *) echo "Unsupported architecture for Starship: $(dpkg --print-architecture)" >&2; exit 1 ;;
 esac
-starship_tag="$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/starship/starship/releases/latest)"
+# github.com answers now and then with a 5xx (a 504 failed a build once), and
+# the build runs without a layer cache, so every download is retried.
+fetch=(curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors)
+starship_tag="$("${fetch[@]}" -o /dev/null -w '%{url_effective}' https://github.com/starship/starship/releases/latest)"
 starship_tag="${starship_tag##*/}"
 starship_url="https://github.com/starship/starship/releases/download/${starship_tag}/starship-${starship_target}.tar.gz"
 starship_dir="$(mktemp -d)"
-curl -fsSL -o "${starship_dir}/starship.tar.gz" "${starship_url}"
-starship_sha="$(curl -fsSL "${starship_url}.sha256")"
+"${fetch[@]}" -o "${starship_dir}/starship.tar.gz" "${starship_url}"
+starship_sha="$("${fetch[@]}" "${starship_url}.sha256")"
 echo "${starship_sha}  ${starship_dir}/starship.tar.gz" | sha256sum --check --status
 tar -xzf "${starship_dir}/starship.tar.gz" -C /usr/local/bin starship
 chmod 0755 /usr/local/bin/starship
