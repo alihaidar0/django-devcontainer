@@ -78,7 +78,7 @@ Pull requests into `main` from any branch other than `develop` fail the required
 
    | Field | Value |
    | --- | --- |
-   | Description | `Shared Django dev image: Python 3.14, uv, pre-commit, Postgres 18 client, gettext. Pull, don't build` |
+   | Description | `Shared Django dev image: Python 3.15, uv, pre-commit, Postgres 18 client, gettext. Pull, don't build` |
    | Website | `https://github.com/alihaidar0/django-template` |
    | Topics | `dev-container` `devcontainer` `developer-tools` `django` `docker` `docker-image` `gettext` `multi-arch` `postgresql` `pre-commit` `python` `starship` `uv` `vscode-devcontainer` |
 
