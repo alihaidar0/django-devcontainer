@@ -83,8 +83,7 @@
 #
 #  Required GitHub Secrets:
 #    DOCKERHUB_USERNAME   Docker Hub username
-#    DOCKERHUB_TOKEN      Docker Hub access token for publishing (Read & Write; the
-#                         README sync uses its own token, see dockerhub-description.yml)
+#    DOCKERHUB_TOKEN      Docker Hub access token (also used by dockerhub-description.yml)
 #
 #  Hardening: actions and the reusable workflow are pinned to full commit
 #  SHAs (# vX.Y.Z comment, bumped by Dependabot); explicit runner images;
