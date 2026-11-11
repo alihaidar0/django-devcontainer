@@ -282,7 +282,7 @@ django-devcontainer/
 │   │   └── pr-labels.yml            # Labels a PR from its Conventional Commit title
 │   ├── rulesets/                    # Rulesets as importable JSON (protect-main, protect-develop, protect-tags)
 │   ├── scripts/                     # Helper scripts and their tests: tag reservation, release notes,
-│   │                                #   weekly rebuild check, drift check, README sync (see CONTRIBUTING)
+│   │                                #   weekly rebuild check, drift check, README sync, Docker Hub page (see CONTRIBUTING)
 │   ├── actionlint.yaml              # actionlint config
 │   ├── CODEOWNERS · CONTRIBUTING.md · SECURITY.md · pull_request_template.md
 │   ├── CODE_OF_CONDUCT.md           # Contributor Covenant 2.1
@@ -312,7 +312,7 @@ django-devcontainer/
 ├── cspell.json                      # Spell-check config (en + en-GB, code dictionaries)
 ├── LICENSE                          # MIT
 ├── repomix.config.json              # Packs the repository into one file for sharing (output is git-ignored)
-└── README.md                        # This file — also the Docker Hub page
+└── README.md                        # This file — its user-facing part is also the Docker Hub page
 ```
 
 ---

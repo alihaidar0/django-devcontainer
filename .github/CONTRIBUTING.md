@@ -306,8 +306,13 @@ code. It checks that every alias in `scripts/shell_setup.sh` is in the README
 alias table (and the reverse), every CLI pinned in `docker/requirements-tools.txt`
 is named, the Python minor, PostgreSQL major, and Debian codename in
 `docker/Dockerfile.dev` and the Starship version in `scripts/shell_setup.sh`
-match what the README says, and every file in
-`.github/workflows/` appears in the repository tree. Run it locally with
+match what the README says, every file in `.github/workflows/` appears in the
+repository tree, and the Docker Hub page stays under Docker Hub's 25 000-byte
+limit. That page is the README without the maintainer sections (repository
+structure, updating the image), built by
+[`scripts/dockerhub-readme.sh`](scripts/dockerhub-readme.sh), which also turns
+in-page links into absolute GitHub links; add a section to its `skip` list when a
+new maintainer-only section should stay on GitHub. Run the checks locally with
 `bash .github/scripts/check-readme-sync.sh`.
 
 **Spelling:** cspell uses English (US + GB) plus code dictionaries (Python,
@@ -322,7 +327,7 @@ The VS Code *Code Spell Checker* extension (recommended in
 
 | Workflow | What |
 | --- | --- |
-| [`dockerhub-description.yml`](workflows/dockerhub-description.yml) | Syncs `README.md` + repo description to Docker Hub on merge to `main` (no PR trigger — unmerged docs never publish) |
+| [`dockerhub-description.yml`](workflows/dockerhub-description.yml) | Syncs the Docker Hub page (the user-facing part of `README.md`, built by `scripts/dockerhub-readme.sh`) + repo description to Docker Hub on merge to `main` (no PR trigger — unmerged docs never publish) |
 | [`labels.yml`](workflows/labels.yml) | Syncs [`labels.yml`](labels.yml) when it changes on `develop`; PRs get a dry run; labels not in the file are kept |
 | [`pr-labels.yml`](workflows/pr-labels.yml) | Adds labels to a PR from its Conventional Commit title (`feat` → `enhancement`, `fix` → `bug`, `docs` → `documentation`, `ci` → `ci`, other types → `chore`, scope `deps` / `docker`, `!` → `breaking change`, `develop` → `main` → `release`). It only adds, never removes, and skips Dependabot (which labels itself) |
 | [`dependency-drift.yml`](workflows/dependency-drift.yml) | Mondays 05:47 UTC: one issue for the PostgreSQL major, the Debian release, the Python minor, the actionlint and zizmor versions in `lint.yml`, the Starship version in `shell_setup.sh` and the Dockerfile syntax frontend that are behind upstream (Python is compared with what **Django supports**, not with the newest Python; Starship with the newest release that is 7 days old); closes itself when current |
@@ -456,6 +461,7 @@ Node is repository tooling only and never enters the image.
 | `ISSUE_TEMPLATE/` | Bug + feature issue forms; blank issues disabled |
 | `rulesets/` | `protect-main`, `protect-develop` and `protect-tags` as importable ruleset JSON (§2) |
 | `scripts/check-readme-sync.sh` | README ↔ implementation check run by `Lint` |
+| `scripts/dockerhub-readme.sh` | Builds the Docker Hub page from `README.md` (maintainer sections left out, links made absolute) and fails when it is over the size limit |
 | `scripts/reserve-tag.sh` | Picks the next free `python-X.Y.Z.R` and creates its git tag (§3) |
 | `scripts/test-reserve-tag.sh` | Tests `reserve-tag.sh` with stubbed `curl` and `gh`, run by `Lint` |
 | `scripts/test-release-notes.sh` | Tests the title handling of `release-notes.sh` (section mapping, scopes, breaking changes, titles read from merge commits), run by `Lint` |

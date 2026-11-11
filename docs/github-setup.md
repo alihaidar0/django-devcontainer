@@ -94,7 +94,7 @@ The image repository is created and configured by hand; the workflows only push 
 4. **Categories:** `Developer tools` and `Languages & frameworks`.
 5. **Access tokens: two, one per job.** Docker Hub → Account settings → **Personal access tokens** → **Generate new token**, twice. Copy each once; they go into the repository secrets in section 5. Note the expiry dates and renew the tokens before then.
    - **Publishing token**, permission **Read & Write**: pushes the image from `docker.yml`. It cannot delete tags or the repository, so a leaked copy can push images but not remove existing ones.
-   - **Description token**, permission **Read, Write & Delete** (updating the description needs Delete): used only by `dockerhub-description.yml`, which runs on `main` after a README change and never builds anything.
+   - **Description token**, permission **Read, Write & Delete** (updating the description needs Delete): used only by `dockerhub-description.yml`, which runs on `main` after a README change (it sends the user-facing part of the README, built by `.github/scripts/dockerhub-readme.sh`) and never builds anything.
 6. **Never enable tag retention or inactive-image clean-up** for this repository. Old `python-X.Y.Z.R` tags are restore points and must not expire outside the pipeline. Never delete or move a `python-X.Y.Z.R` tag by hand either.
 7. **The README is synced by the pipeline.** The **Docker Hub description** workflow copies `README.md` and the GitHub description to the repository on every README change merged to `main`. After creating a new repository, run it once by hand (Actions → **Docker Hub description** → **Run workflow**, branch `main`).
 

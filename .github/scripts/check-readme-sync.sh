@@ -9,7 +9,8 @@
 #    * a CLI pinned in docker/requirements-tools.txt is not named in the README,
 #    * an apt package installed by docker/Dockerfile.dev is not mentioned in the
 #      README (a few are matched by their command name: ping, dig, nc, …),
-#    * the README is larger than 24 000 bytes (Docker Hub truncates at 25 000),
+#    * the part of the README that goes to Docker Hub (dockerhub-readme.sh) is
+#      larger than 24 500 bytes (Docker Hub truncates at 25 000),
 #    * the Python minor, the PostgreSQL major or the Debian codename in
 #      docker/Dockerfile.dev, or the Starship version in scripts/shell_setup.sh,
 #      is not what the README says,
@@ -74,12 +75,10 @@ while IFS= read -r name; do
 done <<< "${tool_names}"
 
 # ── Size ─────────────────────────────────────────────────────
-# The README is also the Docker Hub page, and Docker Hub truncates it at 25 000
-# bytes. Keep a margin, so one more paragraph cannot silently cut the page.
-readme_bytes="$(wc -c < "${readme}" | tr -d ' ')"
-if [ "${readme_bytes}" -gt 24000 ]; then
-  fail "README is ${readme_bytes} bytes; keep it under 24000 (Docker Hub truncates at 25000). Move detail to docs/ or CONTRIBUTING."
-fi
+# Docker Hub truncates its page at 25 000 bytes. The page is the README without the
+# maintainer sections (dockerhub-readme.sh), and that script fails when the result
+# is over its margin, so one more paragraph cannot silently cut the page.
+bash .github/scripts/dockerhub-readme.sh /dev/null || status=1
 
 # ── apt packages ─────────────────────────────────────────────
 # Every package in the Dockerfile's apt install list must be documented. The README
