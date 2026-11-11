@@ -134,9 +134,9 @@ Why this repository works the way it does. Each entry says what was decided, why
 
 ### 19. Documentation is checked, not trusted
 
-- **Decision:** `Lint` fails when the README disagrees with the code: aliases, pinned tools, apt packages, the Python, PostgreSQL and Debian versions, the formats `django-template` parses, the workflow list, and the README's size (Docker Hub truncates it at 25 000 bytes). The scripts that carry logic have tests that need only bash.
+- **Decision:** `Lint` fails when the README disagrees with the code: aliases, pinned tools, apt packages, the Python, PostgreSQL and Debian versions, the formats `django-template` parses, the workflow list, and the size of the Docker Hub page (it truncates at 25 000 bytes). That page is the README without its maintainer sections (repository structure, updating the image), built by `dockerhub-readme.sh`, so the full README on GitHub can grow while the page stays complete. The scripts that carry logic have tests that need only bash.
 - **Why:** the README is also the public Docker Hub page, and a stale table there is a public bug.
-- **Where:** `.github/scripts/check-readme-sync.sh` and the `test-*.sh` scripts, run by `lint.yml`.
+- **Where:** `.github/scripts/check-readme-sync.sh`, `.github/scripts/dockerhub-readme.sh` (also run by `dockerhub-description.yml`) and the `test-*.sh` scripts, run by `lint.yml`.
 
 ### 20. The contract with `django-template`
 
