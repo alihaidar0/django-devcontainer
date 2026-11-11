@@ -45,7 +45,7 @@ expect "\$HOME/.shell_history owned by dev" test -O "$HOME/.shell_history"
 expect "everything in \$HOME owned by dev"  test -z "$(find "$HOME" ! -user dev -print -quit)"
 
 echo "── Tools ────────────────────────────────────────"
-tool "python 3.14"      bash -c 'python --version | grep -E "^Python 3\.14\."'
+tool "python 3.15"      bash -c 'python --version | grep -E "^Python 3\.15\."'
 tool "uv"               uv --version
 tool "uvx"              uvx --version
 tool "pre-commit"       pre-commit --version
