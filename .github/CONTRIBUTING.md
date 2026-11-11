@@ -332,11 +332,9 @@ The VS Code *Code Spell Checker* extension (recommended in
 | [`pr-labels.yml`](workflows/pr-labels.yml) | Adds labels to a PR from its Conventional Commit title (`feat` → `enhancement`, `fix` → `bug`, `docs` → `documentation`, `ci` → `ci`, other types → `chore`, scope `deps` / `docker`, `!` → `breaking change`, `develop` → `main` → `release`). It only adds, never removes, and skips Dependabot (which labels itself) |
 | [`dependency-drift.yml`](workflows/dependency-drift.yml) | Mondays 05:47 UTC: one issue for the PostgreSQL major, the Debian release, the Python minor, the actionlint and zizmor versions in `lint.yml`, the Starship version in `shell_setup.sh` and the Dockerfile syntax frontend that are behind upstream (Python is compared with what **Django supports**, not with the newest Python; Starship with the newest release that is 7 days old); closes itself when current |
 
-Required secrets: `DOCKERHUB_USERNAME`, and two Docker Hub personal access tokens
-that belong to different jobs. `DOCKERHUB_TOKEN` (**Read & Write**) publishes the
-image. `DOCKERHUB_DESCRIPTION_TOKEN` (**Read, Write & Delete** — updating the
-description needs Delete) is used only by `dockerhub-description.yml`, so a leaked
-publishing token cannot delete tags or the repository. `GITHUB_TOKEN` is automatic.
+Required secrets: `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, a Docker Hub personal
+access token. `docker.yml` publishes the image with it and `dockerhub-description.yml`
+updates the Docker Hub page with it. `GITHUB_TOKEN` is automatic.
 
 ### Workflow hardening (keep it when editing)
 
