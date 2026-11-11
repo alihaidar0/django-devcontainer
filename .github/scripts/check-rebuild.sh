@@ -2,23 +2,21 @@
 # =============================================================
 #  check-rebuild.sh — does the weekly run need to build a new image?
 #
-#  The published image only goes stale in two ways that no pull request
-#  announces, so those are the two things checked:
+#  The published image only goes stale in one way that no pull request
+#  announces, so that is the one thing checked:
 #    * apt: as root inside the published :latest image, `apt-get -s upgrade`
 #      (a simulation) lists every package Debian, GitHub CLI or PGDG have
 #      updated since the image was built. Any "Inst" line means a rebuild
 #      picks up a fix.
-#    * Starship: it is installed from its latest release, not pinned, so the
-#      installed version is compared with the newest release.
-#  Everything else is pinned (base image, uv, tool versions) and arrives as a
-#  Dependabot pull request, which reaches main through develop and publishes
-#  normally.
+#  Everything else is pinned (base image, uv, tool versions, Starship, the
+#  Dockerfile frontend) and arrives as a Dependabot pull request or as a pull
+#  request the weekly drift issue asks for, which reaches main through develop
+#  and publishes normally.
 #
 #  A missing :latest (a fresh Docker Hub repository) always needs a build.
 #
 #  Inputs (environment): IMAGE (Docker Hub repository); optional REPORT (file
-#  that receives the Markdown report; default stdout), GITHUB_TOKEN (raises the
-#  GitHub API rate limit).
+#  that receives the Markdown report; default stdout).
 #  Outputs (GITHUB_OUTPUT, when set): rebuild=true|false.
 #  Exit status: 0 on a decision, 1 when a check could not be made (a run that
 #  cannot tell must fail loudly instead of silently skipping a rebuild).
@@ -70,30 +68,6 @@ if [ "${status}" = "200" ]; then
     note "apt packages" "${#upgrades[@]} upgrade(s) available — **build**"
   else
     note "apt packages" "up to date"
-  fi
-
-  # ── Starship: installed vs newest release ──
-  installed="$(docker run --rm "${IMAGE}:latest" starship --version | sed -n '1s/^starship \([0-9][0-9.]*\).*/\1/p')"
-  if [ -z "${installed}" ]; then
-    echo "::error::Could not read the Starship version from ${IMAGE}:latest."
-    exit 1
-  fi
-  auth=()
-  if [ -n "${GITHUB_TOKEN:-}" ]; then auth=(-H "Authorization: Bearer ${GITHUB_TOKEN}"); fi
-  if latest_json="$(curl -fsS --max-time 20 "${auth[@]}" \
-    "https://api.github.com/repos/starship/starship/releases/latest" 2> /dev/null)"; then
-    latest="$(sed -n 's/.*"tag_name": *"v\{0,1\}\([0-9][0-9.]*\)".*/\1/p' <<< "${latest_json}" | head -1)"
-  else
-    latest=""
-  fi
-  if [ -z "${latest}" ]; then
-    # An unreachable release feed is not drift; the apt check and the next run still apply.
-    note "Starship" "${installed} installed; newest release could not be read (not counted)"
-  elif [ "${installed}" != "${latest}" ]; then
-    rebuild=true
-    note "Starship" "${installed} installed, ${latest} released — **build**"
-  else
-    note "Starship" "${installed} is the newest release"
   fi
 fi
 

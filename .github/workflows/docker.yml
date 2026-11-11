@@ -7,7 +7,9 @@
 #  Principle: build and test what you publish. A PR is tested before it merges
 #  into develop, and a release run on main tests again right before it publishes,
 #  because every build runs `apt-get upgrade` and so picks up Debian packages
-#  newer than the ones develop was tested with.
+#  newer than the ones develop was tested with. No build uses the layer cache:
+#  a cached `apt-get upgrade` layer would keep the Debian packages of the day
+#  the cache was written, so the upgrade would silently not happen.
 #
 #  Jobs:
 #    changes      Did the image inputs (docker/, scripts/, tests/,
@@ -16,9 +18,13 @@
 #                   push to develop → develop vs main (what the next release adds)
 #                   push to main    → this push vs the previous main
 #    rebuild-check  Weekly schedule only: is a new image needed? Simulates
-#                 `apt-get upgrade` inside the published :latest and compares
-#                 the installed Starship with the newest release. The reasons
+#                 `apt-get upgrade` inside the published :latest. The reasons
 #                 are written to the job summary.
+#    scan-published  Weekly schedule only: Trivy scans the published :latest as it
+#                 is on Docker Hub today, with the same gate as `test` (CRITICAL
+#                 with a fix), so a finding that appeared after publishing, and
+#                 that a rebuild cannot fix, is reported. Runs next to
+#                 rebuild-check; a failure opens the tracking issue.
 #    dispatch-build  Weekly schedule only, when rebuild-check found something:
 #                 starts this workflow on main (workflow_dispatch, push=true).
 #                 Scheduled workflows run from the DEFAULT branch (develop), and
@@ -60,13 +66,15 @@
 #      (only when image inputs changed; the PR itself reuses develop's green
 #      "Image tests", required by the main ruleset, but the image is rebuilt
 #      and tested at publish time so the published image is a tested one)
-#    - Weekly schedule (Mon 05:00; runs from the default branch, develop)
-#                                        → rebuild-check → (only if apt or
-#      Starship changed) dispatch-build → [a dispatch run on main:]
+#    - Weekly schedule (Mon 04:23 UTC — off the top of the hour, when GitHub
+#      delays or drops scheduled runs; runs from the default branch, develop)
+#                                        → rebuild-check → (only if apt has
+#      upgrades) dispatch-build → [a dispatch run on main:]
 #      test → reserve-tag → publish → scan
-#      Picks up Debian security fixes, apt packages and Starship even when
-#      nothing in the repo changed; it adds the next image revision of the
-#      same Python version. A week with nothing new publishes nothing.
+#                                        → scan-published (alongside)
+#      Picks up Debian security fixes and apt packages even when nothing in
+#      the repo changed; it adds the next image revision of the same Python
+#      version. A week with nothing new publishes nothing.
 #      (GitHub pauses schedules after 60 days without repository activity —
 #      re-enable in the Actions tab.)
 #    - Manual dispatch on main           → test → reserve-tag → publish
@@ -75,7 +83,7 @@
 #
 #  Required GitHub Secrets:
 #    DOCKERHUB_USERNAME   Docker Hub username
-#    DOCKERHUB_TOKEN      Docker Hub access token (Read, Write & Delete)
+#    DOCKERHUB_TOKEN      Docker Hub access token (also used by dockerhub-description.yml)
 #
 #  Hardening: actions and the reusable workflow are pinned to full commit
 #  SHAs (# vX.Y.Z comment, bumped by Dependabot); explicit runner images;
@@ -92,17 +100,13 @@ on:
   pull_request:
     branches: [develop]
   schedule:
-    - cron: "0 5 * * 1"
+    - cron: "23 4 * * 1"
   workflow_dispatch:
     inputs:
       push:
         description: "Publish to Docker Hub after the smoke tests pass"
         type: boolean
         default: true
-      no_cache:
-        description: "Full rebuild — ignore the layer cache"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -189,7 +193,6 @@ jobs:
         id: check
         env:
           IMAGE: alihaidar199527/django-devcontainer
-          GITHUB_TOKEN: ${{ github.token }}
           REPORT: ${{ runner.temp }}/rebuild-report.md
         run: bash .github/scripts/check-rebuild.sh
 
@@ -198,6 +201,53 @@ jobs:
         env:
           REPORT: ${{ runner.temp }}/rebuild-report.md
         run: '[ ! -f "$REPORT" ] || cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"'
+
+  # Weekly schedule only. `scan` looks at an image once, on the day it is published;
+  # this job looks at what is on Docker Hub now, so a vulnerability disclosed later
+  # in something a rebuild cannot fix (a Go or Rust binary such as gh, uv or
+  # Starship) is noticed. Same gate as the test job: CRITICAL with a fix, minus
+  # the accepted findings. A failure opens the tracking issue (report-failure);
+  # a finding that this week's rebuild already fixes clears on the next scan.
+  scan-published:
+    name: Scan the published image
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # For .github/vex.openvex.json and .github/trivy-ignore.rego.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+
+      - name: Vulnerability gate (CRITICAL with a fix)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_VEX: .github/vex.openvex.json
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: table
+          output: trivy-published.txt
+          severity: CRITICAL
+          ignore-unfixed: true
+          ignore-policy: .github/trivy-ignore.rego
+          exit-code: "1"
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## Weekly scan of the published image"
+            echo ""
+            echo "Trivy, \`${IMAGE_NAME}:latest\`, CRITICAL findings that have a fix (accepted findings excluded):"
+            echo ""
+            echo '```text'
+            if [ -s trivy-published.txt ]; then cat trivy-published.txt; else echo "No findings."; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Scheduled workflows run from the default branch (develop), which never
   # publishes. When the check found something, start the ordinary build on main:
@@ -257,9 +307,10 @@ jobs:
           load: true
           push: false
           tags: django-devcontainer:test
-          cache-from: type=gha,scope=test-${{ matrix.arch }}
-          cache-to: type=gha,scope=test-${{ matrix.arch }},mode=max
-          no-cache: ${{ inputs.no_cache == true }}
+          # No layer cache: a cached `apt-get upgrade` layer is not re-run, so the
+          # image would keep the Debian packages of the day the cache was written
+          # and the vulnerability gate would fail on fixes Debian already ships.
+          no-cache: true
 
       - name: Smoke test
         run: docker run --rm -v "$PWD/tests:/tests:ro" django-devcontainer:test bash /tests/smoke.sh
@@ -390,8 +441,9 @@ jobs:
       runner: |
         default=ubuntu-26.04
         linux/arm64=ubuntu-26.04-arm
-      cache: ${{ inputs.no_cache != true }}
-      cache-mode: max
+      # No layer cache, for the same reason as the test build: every publish
+      # must really run `apt-get upgrade`, or the weekly rebuild ships stale packages.
+      cache: false
       sbom: true
       set-meta-labels: true
       set-meta-annotations: true
@@ -457,7 +509,7 @@ jobs:
           exit-code: "0"
 
       - name: Upload Trivy results to Security tab
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: trivy-results.sarif
 
@@ -509,3 +561,39 @@ jobs:
       python_version: ${{ needs.reserve-tag.outputs.python_version }}
       image: alihaidar199527/django-devcontainer
       digest: ${{ needs.publish.outputs.digest }}
+
+  # A scheduled run, and the run it dispatches on main (triggered by
+  # github-actions[bot]), have no human author, so GitHub's failure notification
+  # reaches nobody. Keep one open issue instead; a new failure comments on it.
+  # Manual dispatches are reported too: the actor is not checked, because that
+  # check can be spoofed and a report is harmless.
+  report-failure:
+    name: Report a failed unattended run
+    needs: [rebuild-check, scan-published, dispatch-build, changes, test, reserve-tag, publish, scan, release]
+    if: >-
+      failure() &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      issues: write   # open the tracking issue, or comment on it
+    steps:
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TITLE: "Unattended Docker run failed"
+        run: |
+          body="The ${EVENT} run of the Docker workflow failed: ${RUN_URL}"
+          body="${body}"$'\n\n'"Fix the cause and re-run it (or wait for the next weekly run), then close this issue."
+          number="$(gh issue list --state open --label bug --limit 100 \
+            --json number,title --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")"
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+            echo "Commented on issue #$number" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh issue create --title "$TITLE" --label bug --body "$body"
+            echo "Opened the tracking issue" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================
-#  test-check-rebuild.sh — tests check-rebuild.sh with stubbed docker, curl and
-#  nothing else, so the decision logic is checked on every Lint run without
+#  test-check-rebuild.sh — tests check-rebuild.sh with stubbed docker and curl
+#  and nothing else, so the decision logic is checked on every Lint run without
 #  touching Docker Hub, GitHub or a container. Needs only bash.
 # =============================================================
 set -euo pipefail
@@ -11,31 +11,19 @@ work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 mkdir "${work}/bin"
 
-# docker stub: `pull` succeeds; `run … apt-get …` prints $APT_OUTPUT;
-# any other `run` (starship --version) prints $STARSHIP_INSTALLED.
+# docker stub: `pull` succeeds; `run … apt-get …` prints $APT_OUTPUT.
 cat > "${work}/bin/docker" << 'EOF'
 #!/usr/bin/env bash
 case "$1" in
   pull) exit 0 ;;
-  run)
-    if [[ "$*" == *apt-get* ]]; then
-      printf '%s\n' "${APT_OUTPUT:-}"
-    else
-      echo "starship ${STARSHIP_INSTALLED:-1.26.0}"
-      echo "branch:master"
-    fi
-    ;;
+  run) printf '%s\n' "${APT_OUTPUT:-}" ;;
 esac
 EOF
 
-# curl stub: the Docker Hub URL answers $HUB_STATUS (default 200); the GitHub
-# API answers the newest Starship release, or fails when STARSHIP_FAIL is set.
+# curl stub: the Docker Hub URL answers $HUB_STATUS (default 200).
 cat > "${work}/bin/curl" << 'EOF'
 #!/usr/bin/env bash
-url="${*: -1}"
-if [[ "${url}" == *hub.docker.com* ]]; then echo "${HUB_STATUS:-200}"; exit 0; fi
-if [ -n "${STARSHIP_FAIL:-}" ]; then exit 22; fi
-echo "{\"tag_name\": \"v${STARSHIP_LATEST:-1.26.0}\", \"name\": \"v${STARSHIP_LATEST:-1.26.0}\"}"
+echo "${HUB_STATUS:-200}"
 EOF
 chmod +x "${work}/bin/docker" "${work}/bin/curl"
 
@@ -67,8 +55,6 @@ apt_noise=$'Reading package lists...\nBuilding dependency tree...\nConf libssl3t
 run "nothing changed: no rebuild"                 0 false
 run "an apt upgrade is available"                 0 true  APT_OUTPUT="${apt_inst}"
 run "apt noise without an Inst line is ignored"   0 false APT_OUTPUT="${apt_noise}"
-run "Starship has a newer release"                0 true  STARSHIP_INSTALLED=1.25.0
-run "Starship release feed unreachable is not drift" 0 false STARSHIP_FAIL=1
 run "no published image yet: build"               0 true  HUB_STATUS=404
 run "stops on an unexpected Docker Hub answer"    1 ""    HUB_STATUS=500
 

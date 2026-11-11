@@ -23,8 +23,8 @@ Why this repository works the way it does. Each entry says what was decided, why
 
 ### 3. Python follows Django
 
-- **Decision:** the image uses the newest Python minor that Django officially supports (3.12–3.14 today, from the [Django FAQ](https://docs.djangoproject.com/en/stable/faq/install/) and the classifiers Django publishes on PyPI), on the latest patch. Dependabot proposes Python **patch** updates only; the weekly drift check announces when Django supports a new minor, and the move is then manual.
-- **Why:** a project inherits the image's Python, so a Python Django does not support would put every new project outside what Django tests. Python 3.15 was released while Django still lists 3.14 as its newest.
+- **Decision:** the image uses the newest Python minor that Django officially supports (3.12–3.15 today, from the [Django FAQ](https://docs.djangoproject.com/en/stable/faq/install/) and the classifiers Django publishes on PyPI), on the latest patch. Dependabot proposes Python **patch** updates only; the weekly drift check announces when Django supports a new minor, and the move is then manual.
+- **Why:** a project inherits the image's Python, so a Python Django does not support would put every new project outside what Django tests. Python 3.15 was released in October 2026 and the image waited for Django 6.1.3, the first release to list it.
 - **Rejected:** following the newest Python released (a release candidate was once merged that way); a Dependabot `versions` range (its Docker range syntax is only loosely documented, `update-types` is explicit).
 - **Where:** `docker/Dockerfile.dev` (the `FROM python:` line and its comment), the `ignore` rule in `.github/dependabot.yml`, `.github/scripts/check_drift.py`, the Python check in `tests/smoke.sh`.
 
@@ -53,23 +53,24 @@ Why this repository works the way it does. Each entry says what was decided, why
 - **Why:** an alias for a missing tool only fails. The eight Django aliases are also part of the contract that `django-template` reads.
 - **Where:** `scripts/shell_setup.sh`, the "Shell aliases" table in the README, `tests/smoke.sh`.
 
-### 8. Starship from a verified release, not a remote script
+### 8. Starship is pinned, with checksums kept in the repository
 
-- **Decision:** each build downloads the newest Starship release tarball and checks it against the SHA-256 published with it. Nothing is pinned; the weekly check rebuilds when a newer release exists.
-- **Why:** running a downloaded install script as root is the pattern supply-chain guidance warns against, and the Dockerfile already avoids it for uv. The checksum comes from the same release, so it catches a corrupted or tampered download but not a compromised release; that residual risk is accepted for a prompt binary.
-- **Where:** `scripts/shell_setup.sh`.
+- **Decision:** `scripts/shell_setup.sh` names one Starship version and the SHA-256 of each architecture's release tarball, and the build fails if a download does not match. A weekly drift issue reports a newer release that is at least 7 days old; moving to it is a pull request that changes the version and both checksums, computed from the downloaded tarballs and compared with the digests GitHub shows for the release assets.
+- **Why:** running a downloaded install script as root is the pattern supply-chain guidance warns against, and the Dockerfile already avoids it for uv. A checksum published next to the tarball would vouch for a tampered release too, so the checksums live here, where a change needs a review. The weekly rebuild used to publish whatever the newest release was, with no review and no cooldown, while every other dependency waits 7 days; this gives Starship the same treatment.
+- **Rejected:** the earlier design (newest release on every build, checked against the checksum published with it), which left a compromised release one weekly rebuild away from `latest`. The cost of pinning is one pull request per Starship release.
+- **Where:** `scripts/shell_setup.sh`, `.github/scripts/check_drift.py` (the Starship row), the `Starship` line of the README (`Lint` checks the version).
 
 ### 9. `apt-get upgrade` on every build
 
-- **Decision:** the base image is pinned by digest, and the build upgrades every Debian package on top of it. hadolint's rule against `apt-get upgrade` is ignored, with the reason written next to it.
-- **Why:** a digest-pinned base freezes its packages at that day. Without an upgrade, a rebuild would change nothing, and security fixes (OpenSSL, the kernel headers, Redis) would wait for the next base-image bump. The cost is that a rebuild is not bit-for-bit reproducible; every revision is kept for rollback.
-- **Where:** `docker/Dockerfile.dev`, `.hadolint.yaml`.
+- **Decision:** the base image is pinned by digest, and the build upgrades every Debian package on top of it. hadolint's rule against `apt-get upgrade` is ignored, with the reason written next to it. No build uses the layer cache, so the upgrade really runs every time.
+- **Why:** a digest-pinned base freezes its packages at that day. Without an upgrade, a rebuild would change nothing, and security fixes (OpenSSL, the kernel headers, Redis) would wait for the next base-image bump. A cached layer has the same effect: the `RUN` step is not executed, so the image keeps the packages of the day the cache was written (the weekly rebuild once published such an image, and later failed the vulnerability gate on a fix Debian already shipped). The cost is that a rebuild is not bit-for-bit reproducible and takes a minute or two longer; every revision is kept for rollback.
+- **Where:** `docker/Dockerfile.dev`, `.hadolint.yaml`, the `no-cache` and `cache` inputs in `docker.yml`.
 
 ## Supply chain and releases
 
 ### 10. Tags: `python-X.Y.Z.R`, `python-X.Y`, `latest`
 
-- **Decision:** `python-X.Y.Z.R` is immutable (Python `X.Y.Z`, image revision `R`); `python-X.Y` and `latest` move to the newest image. A new Python starts at revision 1 (for example `python-3.14.9.1`); any other change takes the next revision and moves the two moving tags. The git tag is created before anything is pushed, and every push-triggered publish (and the first image of a new Python) gets a GitHub Release with the same name.
+- **Decision:** `python-X.Y.Z.R` is immutable (Python `X.Y.Z`, image revision `R`); `python-X.Y` and `latest` move to the newest image. A new Python starts at revision 1 (for example `python-3.15.3.1`); any other change takes the next revision and moves the two moving tags. The git tag is created before anything is pushed, and every push-triggered publish (and the first image of a new Python) gets a GitHub Release with the same name.
 - **Why:** the image is defined by its Python, as the official `python` images are. Reserving the git tag first keeps the image, tag and release from ever disagreeing, and skips names that release immutability has burned. The dotted numeric form lets Dependabot in a consuming repository order and bump the tag.
 - **Rejected:** date and `sha-` tags (the commit is in the image label and the job summary); overwriting a tag.
 - **Where:** `docker.yml` (`reserve-tag`, `publish`, `release`), `.github/scripts/reserve-tag.sh` and its tests, `.github/workflows/release.yml`, the `protect-tags` ruleset.
@@ -86,24 +87,26 @@ Why this repository works the way it does. Each entry says what was decided, why
 - **Why:** because every build upgrades Debian packages (decision 9), the image published days or weeks after `develop` was tested contains newer packages than the tested one. Testing at publish time means the published image is one that was tested.
 - **Where:** `docker.yml` (`test`, `reserve-tag`), `tests/smoke.sh`.
 
-### 13. SBOM, signed provenance, and two scans
+### 13. SBOM, signed provenance, and three scans
 
-- **Decision:** publishing uses Docker's reusable builder (native amd64 and arm64 runners, no emulation, SBOM, keyless Sigstore-signed provenance). The gate before publishing fails on CRITICAL findings with a fix; the scan after publishing is informational and feeds the Security tab with HIGH and CRITICAL findings that have a fix.
-- **Why:** a development image deliberately carries compilers, so a blocking scan of everything would block every release; a blocking scan of the worst findings that can be fixed does not.
+- **Decision:** publishing uses Docker's reusable builder (native amd64 and arm64 runners, no emulation, SBOM, keyless Sigstore-signed provenance). The gate before publishing fails on CRITICAL findings with a fix; the scan after publishing is informational and feeds the Security tab with HIGH and CRITICAL findings that have a fix. Every Monday a third scan runs the same gate as the first on the `latest` that is on Docker Hub, and a failure opens the tracking issue (decision 14).
+- **Why:** a development image deliberately carries compilers, so a blocking scan of everything would block every release; a blocking scan of the worst findings that can be fixed does not. The weekly scan exists because the other two look at an image once, on the day it is built: a vulnerability disclosed later in something a rebuild cannot fix (`gh`, uv and Starship are Go and Rust binaries) would otherwise stay unnoticed until the next release.
 - **Accepted findings:** `.github/vex.openvex.json` (one package version each, with the reason) and `.github/trivy-ignore.rego` (the kernel-headers package, which a container never runs, with the reason).
-- **Where:** `docker.yml` (`publish`, `scan`).
+- **Workflows and build inputs are audited and pinned:** `Lint` runs zizmor (`--offline --min-severity medium`, pinned like actionlint) over the workflow files, which catches an injection or an over-broad permission in a future change. Line 1 of the Dockerfile pins the build frontend (`# syntax=docker/dockerfile:X.Y.Z@sha256:…`) instead of a moving `:1` tag, so a frontend release reaches the build only through a pull request. Neither version is visible to Dependabot, so the weekly drift issue compares both (decision 15).
+- **Where:** `docker.yml` (`publish`, `scan`, `scan-published`), `lint.yml` (zizmor step), `docker/Dockerfile.dev` (line 1).
 
 ### 14. The weekly rebuild check, and why it dispatches
 
-- **Decision:** every Monday a job on `develop` simulates `apt-get upgrade` inside the published `latest` and compares the installed Starship with the newest release. If anything is newer, it starts the normal Docker run on `main`; otherwise nothing happens.
+- **Decision:** every Monday a job on `develop` simulates `apt-get upgrade` inside the published `latest`. If any package is newer, it starts the normal Docker run on `main`; otherwise nothing happens. Starship is not part of this check: it is pinned (decision 8) and moves through a pull request.
 - **Why:** Debian, the GitHub CLI and PostgreSQL publish fixes continuously, and a monthly release would leave the image stale in between. Scheduled workflows always run from the default branch (`develop`), which never publishes, so the build itself runs on `main` as an ordinary manual publish.
+- **Failures:** these runs are started by the schedule and by `github-actions[bot]`, so GitHub's failure notification reaches nobody. The `report-failure` job keeps one open issue (label `bug`) instead, and each new failure comments on it.
 - **Alternative:** delete the dispatch job and the check only reports; every publish is then a human merge. That is the choice made by repositories that publish only on release.
-- **Where:** `docker.yml` (`rebuild-check`, `dispatch-build`), `.github/scripts/check-rebuild.sh` and its tests.
+- **Where:** `docker.yml` (`rebuild-check`, `scan-published`, `dispatch-build`, `report-failure`), `.github/scripts/check-rebuild.sh` and its tests.
 
 ### 15. What Dependabot cannot see is watched by a weekly issue
 
-- **Decision:** `dependency-drift.yml` compares the PostgreSQL major, the Debian release in the python image tag and the Python minor (against what Django supports) with upstream, and keeps one issue up to date; it closes itself when nothing is behind.
-- **Why:** those pins are not in a manifest Dependabot reads, or, for Python, Dependabot is deliberately limited to patches.
+- **Decision:** `dependency-drift.yml` compares the PostgreSQL major, the Debian release in the python image tag, the Python minor (against what Django supports), the actionlint and zizmor versions pinned in `lint.yml`, the Starship version pinned in `shell_setup.sh` (against the newest release that is at least 7 days old) and the Dockerfile syntax frontend pinned on line 1 with upstream, and keeps one issue up to date; it closes itself when nothing is behind.
+- **Why:** those pins are not in a manifest Dependabot reads, or, for Python, Dependabot is deliberately limited to patches. Starship uses the same 7-day cooldown as Dependabot, so a brand-new release is only noted.
 - **Where:** `.github/workflows/dependency-drift.yml`, `.github/scripts/check_drift.py`.
 
 ## Branches and automation
@@ -123,7 +126,7 @@ Why this repository works the way it does. Each entry says what was decided, why
 
 ### 18. Rulesets, secrets and labels
 
-- **Decision:** the rulesets are stored as importable JSON; required checks are `PR source`, `Lint` and `Image tests` (never the per-architecture jobs, because a skipped matrix job reports an unexpanded name). The Docker Hub credentials are repository secrets, not an environment. Labels are limited to those something uses, are synced from `develop` (the default branch), and `pr-labels.yml` adds them to each PR from its Conventional Commit title; it only adds, and is not a required check.
+- **Decision:** the rulesets are stored as importable JSON; required checks are `PR source`, `Lint` and `Image tests` (never the per-architecture jobs, because a skipped matrix job reports an unexpanded name). The Docker Hub credentials are repository secrets, not an environment: `DOCKERHUB_USERNAME` and one token, `DOCKERHUB_TOKEN`, used by `docker.yml` to publish and by `dockerhub-description.yml` to update the Docker Hub page. Labels are limited to those something uses, are synced from `develop` (the default branch), and `pr-labels.yml` adds them to each PR from its Conventional Commit title; it only adds, and is not a required check.
 - **Why:** the JSON files make a recreated repository a matter of importing three files. A job that calls a reusable workflow cannot declare an environment, so repository secrets are the only option for the publish job.
 - **Where:** `.github/rulesets/`, `.github/labels.yml` and its two workflows (`labels.yml`, `pr-labels.yml`), [`github-setup.md`](github-setup.md).
 
@@ -131,9 +134,9 @@ Why this repository works the way it does. Each entry says what was decided, why
 
 ### 19. Documentation is checked, not trusted
 
-- **Decision:** `Lint` fails when the README disagrees with the code: aliases, pinned tools, apt packages, the Python, PostgreSQL and Debian versions, the formats `django-template` parses, the workflow list, and the README's size (Docker Hub truncates it at 25 000 bytes). The scripts that carry logic have tests that need only bash.
+- **Decision:** `Lint` fails when the README disagrees with the code: aliases, pinned tools, apt packages, the Python, PostgreSQL and Debian versions, the formats `django-template` parses, the workflow list, and the size of the Docker Hub page (it truncates at 25 000 bytes). That page is the README without its maintainer sections (repository structure, updating the image), built by `dockerhub-readme.sh`, so the full README on GitHub can grow while the page stays complete. The scripts that carry logic have tests that need only bash.
 - **Why:** the README is also the public Docker Hub page, and a stale table there is a public bug.
-- **Where:** `.github/scripts/check-readme-sync.sh` and the `test-*.sh` scripts, run by `lint.yml`.
+- **Where:** `.github/scripts/check-readme-sync.sh`, `.github/scripts/dockerhub-readme.sh` (also run by `dockerhub-description.yml`) and the `test-*.sh` scripts, run by `lint.yml`.
 
 ### 20. The contract with `django-template`
 
@@ -147,9 +150,9 @@ Why this repository works the way it does. Each entry says what was decided, why
 | Global ruff, mypy, Celery, Flower, IPython, pgcli, HTTPie | Project-level; each project pins its own (decision 4) |
 | ripgrep, fzf, direnv, graphviz, a Docker CLI | Not needed by every project; VS Code ships its own search, and the Docker CLI is useless without a mounted socket |
 | `-dev` headers for Pillow, lxml, cffi | Wheels exist for both architectures (decision 5) |
-| Python 3.15 | Not yet supported by any Django release (decision 3) |
+| Python 3.16 | Not yet supported by any Django release (decision 3) |
 | Renovate | Dependabot covers every pin |
 | A `docker-hub` environment | A reusable-workflow caller cannot declare one (decision 18) |
 | Required reviewers | There is one maintainer, and an author cannot approve their own PR; raise the count when a second maintainer joins |
 | OpenSSF Scorecard and a dependency-review workflow | Optional extras; Dependabot alerts, CodeQL, secret scanning and the Trivy gate already cover the same ground |
-| Pinning Starship to a version | The weekly check keeps it current without manual bumps (decision 8) |
+| Letting a weekly rebuild move Starship to its newest release | A binary from outside the repository would reach `latest` with no review and no cooldown; it is pinned instead (decision 8) |

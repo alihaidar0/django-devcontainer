@@ -4,7 +4,7 @@
 > [`django-template`](https://github.com/alihaidar0/django-template).
 > **Pulled, never built, on your laptop.**
 
-Python 3.14 · uv · pre-commit · PostgreSQL 18 client · gettext · GitHub CLI · Starship — **non-root, multi-arch**
+Python 3.15 · uv · pre-commit · PostgreSQL 18 client · gettext · GitHub CLI · Starship — **non-root, multi-arch**
 
 [![Docker](https://github.com/alihaidar0/django-devcontainer/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/alihaidar0/django-devcontainer/actions/workflows/docker.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/alihaidar199527/django-devcontainer)](https://hub.docker.com/r/alihaidar199527/django-devcontainer)
@@ -56,12 +56,12 @@ django-template ──(Use this template)──▶ your project ─────�
 
 ## What's inside
 
-Base: official `python:3.14-slim-trixie` (Debian 13), pinned by digest. The
+Base: official `python:3.15-slim-trixie` (Debian 13), pinned by digest. The
 image carries the **environment** and nothing a project pins for itself.
 
 | Category | Tool | Notes |
 | --- | --- | --- |
-| **Runtime** | Python 3.14 (latest patch) | The newest minor [Django officially supports](https://docs.djangoproject.com/en/stable/faq/install/); patch updates arrive as their own Dependabot PR |
+| **Runtime** | Python 3.15 (latest patch) | The newest minor [Django officially supports](https://docs.djangoproject.com/en/stable/faq/install/); patch updates arrive as their own Dependabot PR |
 | **Packages** | uv + uvx | Pinned version, copied from the official uv image. uv is the installer; there is no `pip` |
 | **Git hooks** | pre-commit | The template's post-create step runs `pre-commit install`; hooks pin their own tool versions |
 | **Worker reload** | watchfiles | The template's celery service restarts the worker with it on code changes |
@@ -124,7 +124,7 @@ in the same release, and `Lint` here fails if the format drifts.
 ```yaml
 services:
   app:
-    image: alihaidar199527/django-devcontainer:latest   # or :python-3.14 / :python-3.14.8.1 — see Tags
+    image: alihaidar199527/django-devcontainer:latest   # or :python-3.15 / :python-3.15.2.1 — see Tags
     volumes:
       - .:/workspace:cached
       - uv-cache:/home/dev/.cache/uv
@@ -154,16 +154,16 @@ images.
 | Tag | Moves? | Published | Use |
 | --- | --- | --- | --- |
 | `latest` | yes | every publish from `main` | Default for projects: always the newest image |
-| `python-X.Y` (e.g. `python-3.14`) | yes | every publish of that Python line | Stay on a Python line and still get every tool and OS update |
-| `python-X.Y.Z.R` (e.g. `python-3.14.8.1`) | **never** | every publish | Pin a project to one exact image |
+| `python-X.Y` (e.g. `python-3.15`) | yes | every publish of that Python line | Stay on a Python line and still get every tool and OS update |
+| `python-X.Y.Z.R` (e.g. `python-3.15.2.1`) | **never** | every publish | Pin a project to one exact image |
 
 `X.Y.Z` is the Python release inside the image and `R` is the image revision:
 
-- **Python changes** (e.g. 3.14.8 → 3.14.9, or 3.14 → 3.15): a new image
-  `python-3.14.9.1` is built, and `python-3.14` (or `python-3.15`) points to it.
+- **Python changes** (e.g. 3.15.2 → 3.15.3, or 3.15 → 3.16): a new image
+  `python-3.15.3.1` is built, and `python-3.15` (or `python-3.16`) points to it.
 - **Anything else changes** (a tool, a system package, Debian, Starship, the
-  weekly rebuild): the same Python gets the next revision (`python-3.14.8.2`).
-  `latest` and `python-3.14` are replaced by it, and the older revision stays
+  weekly rebuild): the same Python gets the next revision (`python-3.15.2.2`).
+  `latest` and `python-3.15` are replaced by it, and the older revision stays
   available for projects that pinned it.
 
 Every image has a git tag of the same name. Each push-triggered publish, and
@@ -175,15 +175,15 @@ overwritten or deleted, and a revision number is never reused (numbers can
 skip). Keep Docker Hub tag retention off for this repository, otherwise old tags
 can expire outside this pipeline.
 
-**Choosing a tag:** `latest` for day-to-day work; `python-3.14` when a project's
+**Choosing a tag:** `latest` for day-to-day work; `python-3.15` when a project's
 `requires-python` must stay on one line; `python-X.Y.Z.R` (or the digest) when a
 project must keep building on a known image — bump it deliberately.
 
 **Every Monday** a check compares the published `latest` with what is available
-now: any Debian, GitHub CLI or PostgreSQL package upgrade, or a newer Starship.
-Only then is the image rebuilt, so `latest` always carries current security fixes
-and a quiet week publishes nothing. Each rebuild is the next revision of the
-current Python.
+now: any Debian, GitHub CLI or PostgreSQL package upgrade. Only then is the image
+rebuilt, so `latest` always carries current security fixes and a quiet week
+publishes nothing. Each rebuild is the next revision of the current Python.
+`latest` is also scanned for fixable critical vulnerabilities every Monday.
 Platforms: `linux/amd64` (Windows, Linux, cloud) and `linux/arm64` (Apple
 Silicon) — Docker pulls the right one automatically.
 
@@ -230,9 +230,10 @@ Dependabot PR ────┤       cspell · markdownlint)
 PR develop → main ─▶ PR source + the Lint / Image tests results of develop's
                      head commit (required)
 Merge to main ────▶ Test (again) ─▶ Reserve tag ─▶ Publish ─▶ Scan + Release
-Weekly (Mon 05:00) ▶ Rebuild needed? ─(apt or Starship changed)─▶ Test ─▶ Reserve tag
+Weekly (Mon 04:23) ▶ Rebuild needed? ─(apt has upgrades)─▶ Test ─▶ Reserve tag
                      ─▶ Publish ─▶ Scan      (nothing changed: all skipped)
-Weekly (Mon 06:00) ▶ Dependency drift: one issue for what Dependabot can't see
+                   ▶ Trivy scan of the published latest (an issue opens on failure)
+Weekly (Mon 05:47) ▶ Dependency drift: one issue for what Dependabot can't see
 Manual dispatch ──▶ Test ─▶ Reserve tag ─▶ Publish ─▶ Scan
                             │              │          └─ Trivy → Security tab
                             │              └─ docker/github-builder: native
@@ -254,10 +255,11 @@ Manual dispatch ──▶ Test ─▶ Reserve tag ─▶ Publish ─▶ Scan
   branch and reaches `develop` through a PR merged with a merge commit (the PR
   title is the release note); `main` accepts PRs from `develop` only, and every merge into
   `main` is a release.
-- **Pinned supply chain:** every action and the base/uv images are pinned by
-  commit SHA, digest, or exact version; Dependabot checks **everything** —
-  actions, the Python and uv images, and the global CLI pins — weekly, after a
-  7-day cooldown.
+- **Pinned supply chain:** every action, the base/uv images, Starship (with its
+  checksums) and the Dockerfile frontend are pinned by commit SHA, digest, or
+  exact version; Dependabot checks actions, the Python and uv images, and the
+  global CLI pins weekly, after a 7-day cooldown, and a weekly issue reports the
+  other pins that fall behind.
 
 Details: [`.github/CONTRIBUTING.md`](https://github.com/alihaidar0/django-devcontainer/blob/main/.github/CONTRIBUTING.md).
 
@@ -271,16 +273,16 @@ django-devcontainer/
 │   ├── ISSUE_TEMPLATE/              # Bug + feature forms (blank issues disabled)
 │   ├── workflows/
 │   │   ├── docker.yml               # Rebuild check → test → reserve tag → publish → scan → release
-│   │   ├── dependency-drift.yml     # Weekly issue: PostgreSQL major, Debian, Python minor
+│   │   ├── dependency-drift.yml     # Weekly issue: PostgreSQL, Debian, Python minor, actionlint, zizmor, Starship
 │   │   ├── release.yml              # Reusable: GitHub Release named after the image tag
 │   │   ├── branch-policy.yml        # PR source: only develop may open PRs into main
-│   │   ├── lint.yml                 # hadolint · ShellCheck · actionlint · format · README sync · cspell · markdownlint
+│   │   ├── lint.yml                 # hadolint · ShellCheck · actionlint · zizmor · format · README sync · cspell · markdownlint
 │   │   ├── dockerhub-description.yml# README.md → Docker Hub
 │   │   ├── labels.yml               # labels.yml → GitHub labels
 │   │   └── pr-labels.yml            # Labels a PR from its Conventional Commit title
 │   ├── rulesets/                    # Rulesets as importable JSON (protect-main, protect-develop, protect-tags)
 │   ├── scripts/                     # Helper scripts and their tests: tag reservation, release notes,
-│   │                                #   weekly rebuild check, drift check, README sync (see CONTRIBUTING)
+│   │                                #   weekly rebuild check, drift check, README sync, Docker Hub page (see CONTRIBUTING)
 │   ├── actionlint.yaml              # actionlint config
 │   ├── CODEOWNERS · CONTRIBUTING.md · SECURITY.md · pull_request_template.md
 │   ├── CODE_OF_CONDUCT.md           # Contributor Covenant 2.1
@@ -310,7 +312,7 @@ django-devcontainer/
 ├── cspell.json                      # Spell-check config (en + en-GB, code dictionaries)
 ├── LICENSE                          # MIT
 ├── repomix.config.json              # Packs the repository into one file for sharing (output is git-ignored)
-└── README.md                        # This file — also the Docker Hub page
+└── README.md                        # This file — its user-facing part is also the Docker Hub page
 ```
 
 ---
@@ -330,13 +332,13 @@ release with a new Python builds a new image; with only tool or system updates i
 replaces `latest` and `python-X.Y` with the next revision.
 
 **Python follows Django.** The image stays on the newest Python minor that
-Django officially supports (3.12–3.14 today), so Dependabot proposes Python
-**patch** updates only: 3.14.8 → 3.14.9 arrives as its own PR and publishes
-`python-3.14.9.1`. A new minor (3.15, …) is never proposed while Django does not
+Django officially supports (3.12–3.15 today), so Dependabot proposes Python
+**patch** updates only: 3.15.2 → 3.15.3 arrives as its own PR and publishes
+`python-3.15.3.1`. A new minor (3.16, …) is never proposed while Django does not
 list it. A weekly check reads the Python versions Django declares on PyPI and
 opens an issue when Django adds one; then you move the `FROM python:` line,
 `tests/smoke.sh` and this README together, and the image publishes
-`python-3.15.0.1`. Projects on `python-3.14` keep getting 3.14 images until they
+`python-3.16.0.1`. Projects on `python-3.15` keep getting 3.15 images until they
 change their tag.
 
 **A system package:** add it to the single `apt-get install` list in
@@ -348,9 +350,10 @@ newest at build time.
 **uv:** a Dependabot PR bumps the pinned image (tag and digest). uv is pre-1.0, so
 read the PR's release notes before merging a minor version.
 
-**Starship:** nothing is pinned. Each build downloads the newest release and
-checks it against the SHA-256 published with it; the weekly check rebuilds when a
-newer release exists.
+**Starship:** pinned to 1.27.0, with the SHA-256 of each architecture's archive
+kept in `scripts/shell_setup.sh` (not the one published with the release). The
+weekly drift issue reports a release that is at least 7 days old; bump the
+version and both checksums in one PR.
 
 **A global Python CLI:** add `name==version` to `docker/requirements-tools.txt`
 and a matching `uv tool install -c "$c" <name>` line in `Dockerfile.dev`. Only
@@ -358,7 +361,7 @@ tools useful to *every* project belong here — project dependencies go in the
 project.
 
 **Optionally, before opening the PR**, build and test locally (CI does the same on
-every PR, about 15–25 minutes on a cold cache):
+every PR, without a layer cache, in a few minutes):
 
 ```bash
 docker build -f docker/Dockerfile.dev -t django-devcontainer:test .
