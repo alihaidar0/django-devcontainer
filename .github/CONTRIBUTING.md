@@ -365,7 +365,7 @@ Weekly (Monday 09:00 UTC), PRs against **`develop`**, **7-day cooldown**:
   cannot resolve build args in `FROM` — an `ARG`-based base image is never
   updated.
 - **Python follows Django.** The base image stays on the newest Python minor
-  that Django officially supports (3.12–3.14 today, per the
+  that Django officially supports (3.12–3.15 today, per the
   [Django FAQ](https://docs.djangoproject.com/en/stable/faq/install/)).
   Dependabot's `ignore` rule for `python` skips every minor and major bump, so
   only patch updates arrive, each as its own PR (excluded from the Docker group).

@@ -13,7 +13,7 @@ see, and this script compares with the official release data on endoflife.date
   Python minor      the Python line in the FROM line vs the newest Python that
                     Django officially supports (the version classifiers Django
                     publishes on PyPI), NOT the newest Python released: the image
-                    follows Django, so Python 3.15 is not drift while Django does
+                    follows Django, so Python 3.16 is not drift while Django does
                     not list it. Dependabot only proposes Python patch bumps (see
                     its ignore rule), so this row is what announces a new minor.
   actionlint        the version pinned in .github/workflows/lint.yml vs the newest

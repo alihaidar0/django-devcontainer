@@ -23,8 +23,8 @@ Why this repository works the way it does. Each entry says what was decided, why
 
 ### 3. Python follows Django
 
-- **Decision:** the image uses the newest Python minor that Django officially supports (3.12–3.14 today, from the [Django FAQ](https://docs.djangoproject.com/en/stable/faq/install/) and the classifiers Django publishes on PyPI), on the latest patch. Dependabot proposes Python **patch** updates only; the weekly drift check announces when Django supports a new minor, and the move is then manual.
-- **Why:** a project inherits the image's Python, so a Python Django does not support would put every new project outside what Django tests. Python 3.15 was released while Django still lists 3.14 as its newest.
+- **Decision:** the image uses the newest Python minor that Django officially supports (3.12–3.15 today, from the [Django FAQ](https://docs.djangoproject.com/en/stable/faq/install/) and the classifiers Django publishes on PyPI), on the latest patch. Dependabot proposes Python **patch** updates only; the weekly drift check announces when Django supports a new minor, and the move is then manual.
+- **Why:** a project inherits the image's Python, so a Python Django does not support would put every new project outside what Django tests. Python 3.15 was released in October 2026 and the image waited for Django 6.1.3, the first release to list it.
 - **Rejected:** following the newest Python released (a release candidate was once merged that way); a Dependabot `versions` range (its Docker range syntax is only loosely documented, `update-types` is explicit).
 - **Where:** `docker/Dockerfile.dev` (the `FROM python:` line and its comment), the `ignore` rule in `.github/dependabot.yml`, `.github/scripts/check_drift.py`, the Python check in `tests/smoke.sh`.
 
@@ -70,7 +70,7 @@ Why this repository works the way it does. Each entry says what was decided, why
 
 ### 10. Tags: `python-X.Y.Z.R`, `python-X.Y`, `latest`
 
-- **Decision:** `python-X.Y.Z.R` is immutable (Python `X.Y.Z`, image revision `R`); `python-X.Y` and `latest` move to the newest image. A new Python starts at revision 1 (for example `python-3.14.9.1`); any other change takes the next revision and moves the two moving tags. The git tag is created before anything is pushed, and every push-triggered publish (and the first image of a new Python) gets a GitHub Release with the same name.
+- **Decision:** `python-X.Y.Z.R` is immutable (Python `X.Y.Z`, image revision `R`); `python-X.Y` and `latest` move to the newest image. A new Python starts at revision 1 (for example `python-3.15.3.1`); any other change takes the next revision and moves the two moving tags. The git tag is created before anything is pushed, and every push-triggered publish (and the first image of a new Python) gets a GitHub Release with the same name.
 - **Why:** the image is defined by its Python, as the official `python` images are. Reserving the git tag first keeps the image, tag and release from ever disagreeing, and skips names that release immutability has burned. The dotted numeric form lets Dependabot in a consuming repository order and bump the tag.
 - **Rejected:** date and `sha-` tags (the commit is in the image label and the job summary); overwriting a tag.
 - **Where:** `docker.yml` (`reserve-tag`, `publish`, `release`), `.github/scripts/reserve-tag.sh` and its tests, `.github/workflows/release.yml`, the `protect-tags` ruleset.
@@ -150,7 +150,7 @@ Why this repository works the way it does. Each entry says what was decided, why
 | Global ruff, mypy, Celery, Flower, IPython, pgcli, HTTPie | Project-level; each project pins its own (decision 4) |
 | ripgrep, fzf, direnv, graphviz, a Docker CLI | Not needed by every project; VS Code ships its own search, and the Docker CLI is useless without a mounted socket |
 | `-dev` headers for Pillow, lxml, cffi | Wheels exist for both architectures (decision 5) |
-| Python 3.15 | Not yet supported by any Django release (decision 3) |
+| Python 3.16 | Not yet supported by any Django release (decision 3) |
 | Renovate | Dependabot covers every pin |
 | A `docker-hub` environment | A reusable-workflow caller cannot declare one (decision 18) |
 | Required reviewers | There is one maintainer, and an author cannot approve their own PR; raise the count when a second maintainer joins |

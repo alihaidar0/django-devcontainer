@@ -103,10 +103,10 @@ What the pipeline writes to the repository (all expected):
 | Tag | What it is |
 | --- | --- |
 | `latest` | The newest image (moving) |
-| `python-X.Y` | The newest image of that Python line (moving), for example `python-3.14` |
-| `python-X.Y.Z.R` | Permanent name of one image: Python `X.Y.Z`, image revision `R`, for example `python-3.14.8.1` |
+| `python-X.Y` | The newest image of that Python line (moving), for example `python-3.15` |
+| `python-X.Y.Z.R` | Permanent name of one image: Python `X.Y.Z`, image revision `R`, for example `python-3.15.2.1` |
 
-The builder also attaches SBOM and signed provenance attestations to every image. `django-template` looks the tags up through the Docker Hub API (its `scripts/pin-image.sh`), so both `python-3.14` and the exact `python-X.Y.Z.R` must exist after the first publish.
+The builder also attaches SBOM and signed provenance attestations to every image. `django-template` looks the tags up through the Docker Hub API (its `scripts/pin-image.sh`), so both `python-3.15` and the exact `python-X.Y.Z.R` must exist after the first publish.
 
 Deleting the **GitHub** repository does not touch Docker Hub. Deleting the **Docker Hub** repository removes the images, tags, description and categories, and every project pinned to one of its tags stops working until the next publish (see [Maintenance and recovery](#12-maintenance-and-recovery)).
 
@@ -372,16 +372,16 @@ Then, in the web interface:
 
   ```bash
   docker buildx imagetools inspect alihaidar199527/django-devcontainer:latest
-  docker buildx imagetools inspect alihaidar199527/django-devcontainer:python-3.14
-  docker buildx imagetools inspect alihaidar199527/django-devcontainer:python-3.14.8.1
-  curl -s https://hub.docker.com/v2/repositories/alihaidar199527/django-devcontainer/tags/python-3.14 | jq -r .name
+  docker buildx imagetools inspect alihaidar199527/django-devcontainer:python-3.15
+  docker buildx imagetools inspect alihaidar199527/django-devcontainer:python-3.15.2.1
+  curl -s https://hub.docker.com/v2/repositories/alihaidar199527/django-devcontainer/tags/python-3.15 | jq -r .name
   ```
 
-- The git tag `python-3.14.8.1` and a GitHub Release of the same name exist, and the release lists the pull request titles. The run summary prints the exact `cosign verify` commands for the signed provenance.
+- The git tag `python-3.15.2.1` and a GitHub Release of the same name exist, and the release lists the pull request titles. The run summary prints the exact `cosign verify` commands for the signed provenance.
 - The published image works:
 
   ```bash
-  docker run --rm alihaidar199527/django-devcontainer:python-3.14 bash -lc 'python --version; uv --version; msgfmt --version | head -1; psql --version; starship --version | head -1; python -m pip --version || echo "no pip (expected)"'
+  docker run --rm alihaidar199527/django-devcontainer:python-3.15 bash -lc 'python --version; uv --version; msgfmt --version | head -1; psql --version; starship --version | head -1; python -m pip --version || echo "no pip (expected)"'
   ```
 
 - The Docker Hub page shows the new README, and the repository has the description from the About box.
@@ -433,8 +433,8 @@ Release: open a pull request `develop` → `main` and merge it with a merge comm
 docker login -u alihaidar199527
 docker buildx imagetools create \
   -t alihaidar199527/django-devcontainer:latest \
-  -t alihaidar199527/django-devcontainer:python-3.14 \
-  alihaidar199527/django-devcontainer:python-3.14.8.1
+  -t alihaidar199527/django-devcontainer:python-3.15 \
+  alihaidar199527/django-devcontainer:python-3.15.2.1
 ```
 
 The next publish moves them forward again, so fix the cause on `develop` and release it.
@@ -471,12 +471,12 @@ Some things can only be confirmed by a real run. Go through them once, after the
 2. **The VEX file is pruned.** The image has no pip, so the statements about pip's bundled msgpack and setuptools 70.3.0 were removed after checking that neither package exists in the published image. One statement remains: virtualenv's embedded setuptools 82.0.1 seed wheel, which is still present under `virtualenv/seed/wheels/embed`. Re-check it whenever `pre-commit` is bumped: if `find /opt/uv-tools -name 'setuptools-82*'` finds nothing, drop the statement. A statement is only ever removed after confirming the package is gone from the image, because a statement that works also hides its finding, so an empty alert list proves nothing.
 
    **Known open findings.** Four HIGH alerts on `usr/bin/gh` (Go standard library and `golang.org/x/net`: HTTP/2 SETTINGS frames, HTTP Range headers, crypto/tls ECH). They come from the Go version the GitHub CLI release was built with, and `gh` 2.102.0 is the newest release, so there is nothing to update yet. They close by themselves when a newer `gh` is built with a fixed Go: the weekly rebuild check notices the new apt package, rebuilds on `main`, and the next scan closes them. Do not add a VEX statement for them: they are real findings, only not fixable here.
-3. **Dependabot respects the Python rule.** After the first Monday, the Dependabot pull requests must contain no Python 3.15 (or newer minor) update, only patch updates. If a 3.15 pull request appears, the `ignore` rule in `.github/dependabot.yml` did not match: close it with the comment `@dependabot ignore this minor version` and tell whoever maintains the repository.
+3. **Dependabot respects the Python rule.** After the first Monday, the Dependabot pull requests must contain no Python 3.16 (or newer minor) update, only patch updates. If a 3.16 pull request appears, the `ignore` rule in `.github/dependabot.yml` did not match: close it with the comment `@dependabot ignore this minor version` and tell whoever maintains the repository.
 4. **The weekly run behaves.** The Docker run of the first Monday (04:23 UTC, on `develop`) shows `Rebuild needed?` with a summary. If it found something, a `Start the rebuild on main` job appears and a new Docker run on `main` starts with the event `workflow_dispatch`.
-5. **The drift issue is quiet.** **Dependency drift** (05:47 UTC) should not open an issue while Python, PostgreSQL, Debian, actionlint, zizmor, Starship and the Dockerfile syntax frontend are current. A Starship release younger than 7 days is only noted. It reports Python 3.15 as informational only.
+5. **The drift issue is quiet.** **Dependency drift** (05:47 UTC) should not open an issue while Python, PostgreSQL, Debian, actionlint, zizmor, Starship and the Dockerfile syntax frontend are current. A Starship release younger than 7 days is only noted. It reports Python 3.16 as informational only.
 6. **The first release reads well.** The release `python-X.Y.Z.1` lists the pull request titles since the previous release, grouped by type, without the `develop` → `main` merge itself.
 7. **Pinning is enforced.** Settings → Actions → General → **Require actions to be pinned to a full-length commit SHA** (section 4) is ticked. If a later run fails because a called workflow uses an unpinned action, the message names it: untick the box until that workflow is updated.
-8. **Sibling repository and notes.** `django-template` documents the tags `latest`, `python-3.14` and `python-X.Y.Z.R`, adds `flower` to its dependency list for its Flower command, and states the Django 6.x minimum (it uses Django 6's CSP middleware). Project notes that describe this image are updated to match.
+8. **Sibling repository and notes.** `django-template` documents the tags `latest`, `python-3.15` and `python-X.Y.Z.R`, adds `flower` to its dependency list for its Flower command, and states the Django 6.x minimum (it uses Django 6's CSP middleware). Project notes that describe this image are updated to match.
 
 ## Settings checklist
 

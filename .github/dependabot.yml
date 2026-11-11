@@ -80,8 +80,8 @@ updates:
       - "dependencies"
       - "docker"
     # Python follows Django, not the other way round: only the Python versions
-    # Django officially supports are proposed. Django supports 3.12–3.14, so patch
-    # bumps within the pinned minor are welcome and every new minor (3.15, …) is
+    # Django officially supports are proposed. Django supports 3.12–3.15, so patch
+    # bumps within the pinned minor are welcome and every new minor (3.16, …) is
     # ignored. The weekly drift issue (workflows/dependency-drift.yml) says when
     # Django adds support for a newer Python; then move the FROM line,
     # tests/smoke.sh and the README together, by hand.
